@@ -75,6 +75,10 @@ Compare date ranges, capital, costs, universes, information access and risk budg
 
 ## Validation and reports
 
+GitHub Actions runs `.github/workflows/python-ci.yml` on every push and pull request, and can also be started manually. It uses Python 3.12 (matching the backend Docker image), installs dependencies with `uv sync --locked`, checks compilation of `app` and `migrations`, and runs the entire backend pytest suite. Tests use SQLite and mocked inference; no database service or API credentials are required. This workflow validates the backend and does not deploy it.
+
+To require a passing run before merging, configure the `Python 3.12 tests` status check in the repository's branch protection or ruleset settings.
+
 ```sh
 cd backend
 uv run pytest -q
