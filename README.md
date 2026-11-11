@@ -92,3 +92,17 @@ The optional OpenClaw skill and setup instructions are in `integrations/openclaw
 Compose binds published ports to loopback. Configure API_TOKEN and a TLS reverse proxy before nonlocal access. The dashboard's API client reads a token from session storage when supplied by an operator; there is no multi-user login UI. Inference endpoints are configured by the operator on the backend, never from agent output. Secrets stay on the backend.
 
 This implementation includes the primary local research flows but is not the entire production-quality specification. Outstanding capabilities include authenticated market-data adapters, richer historical news/fundamental tools, token-budget enforcement and retries, detailed cloud pricing, configurable risk-free rates, benchmark-relative excess returns, advanced comparison date controls, and automated browser testing. PostgreSQL/Docker and real inference require separate environment verification. Treat import provenance and corporate-action consistency as operator responsibilities.
+
+## License
+
+Agentic Alpha is licensed under the [MIT License](LICENSE), copyright © 2026 Jenson Choi. Third-party dependencies, models, and market datasets remain subject to their respective licenses and terms; this license does not grant rights to those materials.
+
+## Financial disclaimer
+
+Agentic Alpha is educational and research-oriented simulation software. Its outputs, including model-generated proposals, benchmark results, and examples, are not financial or investment advice, recommendations, or offers to buy or sell securities.
+
+Accuracy, completeness, reliability, and profitability are not guaranteed. Synthetic data does not represent actual market history. Historical and simulated performance does not guarantee future results, and real trading can result in loss of some or all invested capital.
+
+Anyone who uses the software's outputs for investment decisions or adapts it for real-money trading does so at their own risk and is responsible for independently evaluating the software, data, decisions, and applicable requirements. Such adaptations are not endorsed by the project's authors or contributors.
+
+The software is provided without warranty under the MIT License. To the fullest extent permitted by applicable law, the authors and copyright holders disclaim liability for trading losses, lost profits, or other damages arising from use of the software or its outputs, including modified versions and real-money adaptations. This notice supplements the project's documentation and does not modify the MIT License or exclude liability that cannot lawfully be excluded.
