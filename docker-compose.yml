@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: alpha
+      POSTGRES_USER: alpha
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-simulation-only}
+    volumes: [postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U alpha]
+      interval: 3s
+      retries: 20
+  migrate:
+    build: ./backend
+    environment: &env
+      DATABASE_URL: postgresql+psycopg://alpha:${POSTGRES_PASSWORD:-local-simulation-only}@db/alpha
+      DATA_DIR: /data
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      COMPATIBLE_BASE_URL: ${COMPATIBLE_BASE_URL:-http://host.docker.internal:8001/v1}
+      ENABLE_CLOUD: ${ENABLE_CLOUD:-false}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      API_TOKEN: ${API_TOKEN:-}
+    command: sh -c 'alembic upgrade head && python -m app.cli demo'
+    volumes: [datasets:/data]
+    depends_on:
+      db: {condition: service_healthy}
+  api:
+    build: ./backend
+    environment: *env
+    volumes: [datasets:/data]
+    ports: [127.0.0.1:8000:8000]
+    extra_hosts: [host.docker.internal:host-gateway]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+  worker:
+    build: ./backend
+    environment: *env
+    command: python -m app.worker
+    volumes: [datasets:/data]
+    extra_hosts: [host.docker.internal:host-gateway]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+  frontend:
+    build: ./frontend
+    ports: [127.0.0.1:8080:80]
+    depends_on: [api]
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [ollama]
+    volumes: [ollama:/root/.ollama]
+volumes:
+  postgres:
+  datasets:
+  ollama:

@@ -1,0 +1,1 @@
+{"strategy":"momentum","dataset":"demo","start":"2024-04-01","end":"2024-12-31","initial_capital":100000,"universe":["VOO","AAPL","MSFT","NVDA"],"rebalance":"weekly","max_position_weight":0.1,"slippage_bps":5}
