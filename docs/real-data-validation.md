@@ -2,33 +2,47 @@
 
 All results are simulations. No provider data or credentials are checked into Git.
 
-- Backend: 52 deterministic tests passed, covering acquisition normalization, identity and evidence validation, timing, split FIFO/accounting restart, dividend entitlement and independent reinvestment reconciliation, migration from the original schema, three-strategy persistence, blocked legs, and offline repeatability.
+- Backend: 53 deterministic tests passed, covering acquisition normalization, identity and evidence validation, timing, split FIFO/accounting restart, dividend entitlement and independent reinvestment reconciliation, migration from the original schema, three-strategy persistence, blocked legs, and offline repeatability.
 - Frontend: production TypeScript/Vite build passed. Vite reports its existing large-chunk advisory; dependency deprecation warnings remain in Python tests.
-- Browser: native Chrome showed the local Comparison page, persisted suite count, and both completed baseline selections. Further UI interaction stopped when the user changed Chrome focus. Full form submission, expanded provenance and screenshot review were not completed. Browser connector host was unavailable; API integration and production build were verified separately.
+- Browser: verified the 2026 comparison chart, dataset labels, and metrics in native Chrome; screenshot below. Comparison URLs now support repeated `experiment` parameters for reproducible selections.
 - Quiver: no `QUIVER_API_KEY` in the process. Auth/pagination/schema behavior was tested with HTTP mocks, and normalized imports exercised all three strategies with synthetic fixtures. No real Quiver end-to-end or real congressional performance claim is made.
 - PostgreSQL/Docker were not run; additive Alembic migration compatibility was exercised against an old-schema SQLite database. Existing legacy dataset metadata was preserved.
 
-## Live Yahoo smoke and offline repetition
+## 2026 benchmark: January 1 through November 1
 
-Dataset `yahoo-split-smoke-v1` acquired VOO and NVDA, benchmark April 1–30, 2024, with coverage January 17–April 30 and 51 preceding sessions per symbol. No missing sessions were reported. yfinance 0.2.66 retrieved the full adjustment horizon through November 13, 2026. NVDA's June 10, 2024 split (10:1, after the benchmark end) was retained as adjustment evidence and reversed from historical units. First normalized NVDA close: approximately 560.530014, volume 47,439,400. The normalized content hash is `a85a43bee672d903e21c5bc4a276fb1d9f8cfac0508f712f7542e7e02bb237c6`.
-
-Run:
+Requested range: **2026-01-01 through 2026-11-01 inclusive**. Actual exchange sessions: January 2 through October 30 (holiday/weekend boundaries). Dataset `yahoo-2026-v1` contains VOO and NVDA, with 51 preceding warmup sessions starting October 20, 2025. Normalized content hash: `ae55415a56d202bca75b17549dbff7448551c9930f186a553f07de79443b5980`.
 
 ```sh
-uv run python -m app.cli benchmark --dataset yahoo-split-smoke-v1 \
-  --universe VOO,NVDA --start 2024-04-01 --end 2024-04-30 \
-  --wait 20 --output ../reports/yahoo-split-smoke.md
+uv run python -m app.cli download --id yahoo-2026-v1 --symbols VOO,NVDA \
+  --start 2026-01-01 --end 2026-11-01 --long-window 50
+uv run python -m app.cli benchmark --dataset yahoo-2026-v1 --universe VOO,NVDA \
+  --start 2026-01-01 --end 2026-11-01 \
+  --strategies buy_and_hold,momentum,congressional --wait 30 \
+  --output ../reports/2026-benchmark.md
 ```
 
-Suite `221c6b4c-21d1-4e75-aa3f-533e03fcc5ee` completed through the existing worker:
+Suite `98e5bcd5-f440-4157-9b44-a6b47639ac4c` was processed through the existing worker:
 
-| Strategy | Experiment | Total return | Fills |
-|---|---|---:|---:|
-| VOO | dee8a64f-3b9f-4db3-bae2-063941269a4b | -4.204181% | 1 |
-| Momentum | 62e9df15-ef74-4ca0-a627-c173eedd8778 | -0.315607% | 8 |
+| Strategy | Status | Total return | Average exposure | Fills |
+|---|---|---:|---:|---:|
+| VOO buy-and-hold | Completed | 11.0169% | 99.6538% | 1 |
+| Momentum | Completed | -0.8019% | 14.7851% | 67 |
+| Congressional | Blocked: no verified disclosure snapshot | Unavailable | Unavailable | Unavailable |
 
-Initial capital 100,000; fee zero; adverse slippage 5 bps; dividends paid in cash; 20/50 windows; weekly momentum rebalance; 10% active position cap versus 100% passive VOO. These are different exposure budgets, not evidence of strategy superiority. No dividends fell within this short benchmark range; deterministic tests separately reconcile cash dividends and reinvestment.
+Congressional benchmark execution is **deferred to a later PR**. The persisted three-strategy request remains incomplete, while both price-only baselines completed. No Quiver key or registered disclosure snapshots were available. No synthetic disclosures were substituted. A credential alone is insufficient without verified publication evidence and stable transaction identities; an authorized normalized local export can supply these.
 
-An independent VOO calculation (`capital / first_open_with_slippage * last_close`) matched persisted final equity 95,795.81892666304 to below 1e-8. The offline repeat suite `74787359-e67e-4002-976c-49b287bcebc1` produced identical financial metric dictionaries without reacquisition. Reports are locally available in ignored `reports/yahoo-split-smoke.md` and `reports/yahoo-split-repeat.md`.
+Experiment IDs: VOO `3cd6c742-d095-4a6b-948f-d00e0b0ca789`; momentum `2d05c263-b34c-4110-85a5-9e353859ba01`. Initial capital 100,000; zero fees; adverse slippage 5 bps; cash dividends using the ex-date approximation; 20/50 momentum windows; weekly rebalance; 10% active position cap versus 100% passive VOO. Different exposure budgets and a selected fixed universe prevent interpreting this as a controlled claim of superiority.
 
-Earlier VOO/AAPL acquisition `yahoo-smoke-v1` and suite `483fb8df-3ffe-4082-b9e3-fbdefd204b06` also completed. Use the final VOO/NVDA suite above as the validation reference. Dataset manifests and exports record input/configuration hashes, base Git revision and execution implementation hashes so uncommitted development code is distinguishable from the base revision.
+The full persisted report is in ignored `reports/2026-benchmark.md`. Earlier 2024 validation suites remain in the local database but are superseded by this date-range run. The earlier 2024 offline-repeat check is historical validation, not a claim that the 2026 suite was rerun.
+
+Acquisition exposed a calendar-boundary bug when the warmup search began on a weekend. The calendar initialization now includes an extra ten-day buffer before that search boundary.
+
+## Comparison screenshot
+
+The comparison link selects the two completed experiments; the blocked congressional leg has no performance curve:
+
+`/compare?experiment=3cd6c742-d095-4a6b-948f-d00e0b0ca789&experiment=2d05c263-b34c-4110-85a5-9e353859ba01`
+
+![2026 simulated comparison: VOO and momentum](images/comparison-2026.png)
+
+Green: VOO; blue: momentum. Congressional is blocked and therefore has no plotted return. Dataset labels include warmup coverage; portfolio returns start in January 2026.

@@ -53,7 +53,8 @@ def test_reverse_split_and_invalid_shape():
     with pytest.raises(ValueError,match='ambiguous'): normalize_yahoo(f,'T','America/New_York')
 
 
-def test_provider_options_warmup_and_inclusive(monkeypatch):
+@pytest.mark.parametrize('start,end',[(date(2024,4,1),date(2024,4,30)),(date(2026,1,1),date(2026,11,1))])
+def test_provider_options_warmup_and_inclusive(monkeypatch,start,end):
     import yfinance
     calls=[]
     class FakeTicker:
@@ -64,10 +65,10 @@ def test_provider_options_warmup_and_inclusive(monkeypatch):
             days=data.sessions(kwargs['start'],str(pd.Timestamp.now(tz='America/New_York').date())).tz_localize('America/New_York')
             return pd.DataFrame({k:[100.]*len(days) for k in ['Open','High','Low','Close','Adj Close','Volume']}|{'Dividends':0.,'Stock Splits':0.},index=days)
     monkeypatch.setattr(yfinance,'Ticker',FakeTicker)
-    result=YahooProvider().acquire(['VOO','AAPL'],date(2024,4,1),date(2024,4,30),50)
+    result=YahooProvider().acquire(['VOO','AAPL'],start,end,50)
     assert set(result.bars.ticker)=={'VOO','AAPL'}
     assert all(x['warmup_sessions']==51 for x in result.metadata['coverage'].values())
-    assert result.bars.date.max()==pd.Timestamp('2024-04-30')
+    assert result.bars.date.max()==data.sessions(start,end)[-1]
     assert all(not c['auto_adjust'] and not c['repair'] and not c['back_adjust'] and c['timeout']==15 for c in calls)
     assert date.fromisoformat(calls[0]['end'])>date(2024,4,30)
 

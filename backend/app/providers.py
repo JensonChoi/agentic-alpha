@@ -82,7 +82,7 @@ class YahooProvider:
         import yfinance as yf
         if not symbols or len(set(symbols)) != len(symbols): raise ValueError('Provide distinct symbols')
         if end < start or not 3 <= long_window <= 500: raise ValueError('Invalid range or long window')
-        calendar = xcals.get_calendar('XNYS', start=str(start-timedelta(days=long_window*3+30)))
+        calendar = xcals.get_calendar('XNYS', start=str(start-timedelta(days=long_window*3+40)))
         now = pd.Timestamp.now(tz='UTC')
         horizon = now.tz_convert('America/New_York').date()
         requested = calendar.sessions_in_range(str(start), str(end))
