@@ -1,4 +1,4 @@
-# Validation record — November 13, 2026
+# Validation record — November 14, 2026
 
 All results are simulations. No provider data or credentials are checked into Git.
 
@@ -6,7 +6,7 @@ All results are simulations. No provider data or credentials are checked into Gi
 - Frontend: production TypeScript/Vite build passed. Vite reports its existing large-chunk advisory; dependency deprecation warnings remain in Python tests.
 - Browser: verified the 2026 comparison chart, dataset labels, and metrics in native Chrome; the revised screenshot could not be captured because macOS ScreenCaptureKit failed (errors -3811/-3812). The image below is retained from the earlier two-symbol run and does not depict these revised results. Comparison URLs now support repeated `experiment` parameters for reproducible selections.
 - Quiver: no `QUIVER_API_KEY` in the process. Auth/pagination/schema behavior was tested with HTTP mocks, and normalized imports exercised all three strategies with synthetic fixtures. No real Quiver end-to-end or real congressional performance claim is made.
-- PostgreSQL/Docker were not run; additive Alembic migration compatibility was exercised against an old-schema SQLite database. Existing legacy dataset metadata was preserved.
+- PostgreSQL 16/Docker smoke passed locally: fresh migration, legacy revision `001` → `002` upgrade and repeat with metadata preserved, frontend/API proxy readiness, API-created queued experiment, CLI two-strategy suite completed by the real worker, persisted report, and unchanged results after API/worker restart. All smoke inputs are synthetic. The same checks run in the `Docker smoke` GitHub Actions workflow; logs and report are uploaded as artifacts.
 
 ## 2026 benchmark: January 1 through November 1
 
@@ -45,4 +45,4 @@ The comparison link selects the two completed experiments; congressional remains
 
 ![Earlier two-symbol comparison — superseded](images/comparison-2026.png)
 
-**Historical screenshot only:** this image shows the earlier VOO/NVDA run with a 10% cap. The revised five-symbol screenshot is pending resolution of the capture failure. Green: VOO; blue: momentum. Congressional is deferred and therefore has no plotted return. Dataset labels include warmup coverage; portfolio returns start in January 2026.
+**Historical screenshot only:** this image shows the earlier VOO/NVDA run with a 10% cap. The historical image is retained by agreement; it does not represent the revised five-symbol results. Green: VOO; blue: momentum. Congressional is deferred and therefore has no plotted return. Dataset labels include warmup coverage; portfolio returns start in January 2026.
