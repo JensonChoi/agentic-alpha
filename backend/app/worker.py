@@ -6,20 +6,23 @@ from sqlalchemy import select, text
 from .db import Session, Experiment, Record, engine, now, persist_result
 from .contracts import Config
 from .data import load
+from .experiments import inputs, validate
 from .engine import simulate
 
 def execute(id):
     with Session() as db:
         row=db.get(Experiment,id)
         if row is None or row.status=='canceled': return
-        config=Config(**row.config); resume=row.result or None
+        config=Config(**row.config); resume=row.result if row.result.get('state') else None
+        execution_provenance=row.result.get('execution_provenance',{})
     def checkpoint(progress,partial):
         with Session() as db:
             e=db.scalar(select(Experiment).where(Experiment.id==id).with_for_update())
             if e is None or e.status=='canceled': return False
-            e.progress=progress; e.result=partial; e.updated=now(); db.commit(); return True
+            e.progress=progress; e.result={**partial,'execution_provenance':execution_provenance}; e.updated=now(); db.commit(); return True
     try:
-        frame,manifest=load(config.dataset)
+        frame,manifest=inputs(config)
+        validate(config,frame,manifest)
         result=asyncio.run(simulate(config,frame,manifest,checkpoint,resume))
         with Session() as db:
             e=db.scalar(select(Experiment).where(Experiment.id==id).with_for_update())
@@ -28,6 +31,7 @@ def execute(id):
             for f in result['trades']:
                 key=id+':'+f['id']
                 if not db.get(Record,key): db.add(Record(id=key,experiment_id=id,kind='fill',payload=f))
+            result['execution_provenance']=execution_provenance
             persist_result(db,e,result)
             e.result=result; e.status='waiting' if config.mode=='forward' else ('partial' if result['failures'] else 'completed'); e.updated=now(); db.commit()
     except Exception as exc:

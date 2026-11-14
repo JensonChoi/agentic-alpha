@@ -7,6 +7,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select, delete
 from .db import Base, engine, Session, Experiment, Dataset, Record, now, ConfigRow, StrategyRow
 from .contracts import Config, STRATEGIES
+from .experiments import create_experiment, queue
+from .db import DisclosureSnapshot, BenchmarkSuite
 from .data import seed_demo, load
 from .engine import simulate
 from .inference import models
@@ -30,7 +32,7 @@ def get(db,id):
     row=db.scalar(select(Experiment).where(Experiment.id == id).with_for_update())
     if not row: raise HTTPException(404,'Experiment not found')
     return row
-def describe(e): return dict(id=e.id,config=e.config,status=e.status,progress=e.progress,created=e.created,updated=e.updated,error=e.error)
+def describe(e): return dict(execution_provenance=e.result.get('execution_provenance',{}), id=e.id,config=e.config,status=e.status,progress=e.progress,created=e.created,updated=e.updated,error=e.error)
 @app.get('/api/health')
 def health(): return {'status':'ok','simulation_only':True}
 @app.get('/api/strategies',dependencies=[Depends(auth)])
@@ -41,13 +43,10 @@ def strategy(id:str):
     return dict(id=id,version='1',schema=Config.model_json_schema())
 @app.get('/api/datasets',dependencies=[Depends(auth)])
 def datasets():
-    with Session() as db: return [dict(id=d.id,**d.manifest) for d in db.scalars(select(Dataset))]
+    with Session() as db: return [dict(id=d.id,**{**d.manifest,'warnings':d.manifest.get('warnings',[]) + (['Legacy provenance: adjustment conventions unverified'] if d.manifest.get('schema_version')!=2 else [])}) for d in db.scalars(select(Dataset))]
 @app.post('/api/experiments',dependencies=[Depends(auth)],status_code=201)
 def create(config:Config):
-    frame,manifest=load(config.dataset)
-    if not set(config.universe).issubset(manifest['symbols']): raise ValueError('Universe contains symbols absent from dataset')
-    with Session() as db:
-        row=Experiment(config=config.model_dump(mode='json')); db.add(row); db.flush(); db.add(ConfigRow(experiment_id=row.id,payload=row.config)); db.commit(); return describe(row)
+    return describe(create_experiment(config, Session))
 @app.get('/api/experiments',dependencies=[Depends(auth)])
 def experiments(offset:int=Query(0,ge=0),limit:int=Query(50,ge=1,le=200)):
     with Session() as db: return [describe(e) for e in db.scalars(select(Experiment).order_by(Experiment.created.desc()).offset(offset).limit(limit))]
@@ -62,7 +61,7 @@ async def run(id:str):
         if c.strategy in ('single_agent','multi_agent'):
             available=await models(c.provider)
             if c.model not in available or (c.decision_model and c.decision_model not in available): raise ValueError('Configured model is unavailable')
-        e.status='queued'; db.commit(); return describe(e)
+        queue(e); db.commit(); return describe(e)
 @app.post('/api/experiments/{id}/cancel',dependencies=[Depends(auth)])
 def cancel(id:str):
     with Session() as db:
@@ -135,3 +134,11 @@ def advance(id:str,request:AdvanceRequest):
         if not old.reset_index(drop=True).equals(new[new.date<=cutoff].reset_index(drop=True)): raise ValueError('New dataset must preserve every previous bar unchanged')
         if old_manifest['actions']!=[a for a in new_manifest['actions'] if a['date']<=str(cutoff.date())]: raise ValueError('Corporate-action history changed')
         e.config={**e.config,'dataset':request.dataset}; e.status='queued'; db.commit(); return describe(e)
+
+@app.get('/api/disclosure-snapshots',dependencies=[Depends(auth)])
+def disclosure_snapshots():
+    with Session() as db: return [dict(id=d.id,**d.manifest) for d in db.scalars(select(DisclosureSnapshot))]
+
+@app.get('/api/benchmark-suites',dependencies=[Depends(auth)])
+def benchmark_suites():
+    with Session() as db: return [dict(id=s.id,config=s.config,members=s.members) for s in db.scalars(select(BenchmarkSuite))]
