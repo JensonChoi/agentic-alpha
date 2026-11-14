@@ -36,32 +36,24 @@ Splits adjust shares, prior marks and exact FIFO lots. Indicators rescale histor
 
 VOO returns are ledger returns. Adjusted-close returns can differ due to opening entry, fees, slippage, cash dividends, and reinvestment timing; they are not required to match different conventions.
 
-## Congressional acquisition and verified local fallback
+## Congressional benchmarking — deferred
 
-Current official references: [Quiver bulk V2 schema](https://api.quiverquant.com/docs/api-reference/congress/bulk-congress-trading), [Congress endpoint overview](https://api.quiverquant.com/datasets/congress-trades), and [API setup](https://www.quiverquant.com/api-setup/). The bulk endpoint supports `bioguide_id`, `version=V2`, `page`, `page_size`, and `nonstock`. The adapter authenticates using `QUIVER_API_KEY`, bounds requests to 20 seconds, attempts transient errors at most three times, and requires a terminal empty page within 100 pages; repeated pages/schema changes fail instead of silently publishing a partial snapshot. Authentication errors are not retried.
+Quiver is no longer part of the research workflow. No Quiver account, subscription, or API key is required. Congressional acquisition and benchmark validation are deferred to a later PR; the current validated workflow uses Yahoo prices for VOO buy-and-hold and momentum. See [the 2026 validation record](real-data-validation.md) for results and the comparison screenshot.
 
-```sh
-# Set QUIVER_API_KEY securely in the backend environment; never in frontend code.
-uv run python -m app.cli download-disclosures --provider quiver \
-  --id pelosi-quiver-v1 --member-id P000197
-```
+The existing disclosure import and simulation interfaces remain available, but they do not establish a validated real congressional dataset. The Quiver adapter remains in the code for now; it is not used by this workflow. The three-strategy example configuration is prospective, not a completed validation example.
 
-The source advertises history from 2014, but acquisition does not establish complete historical or revision coverage. V2 documents `Filed`, `Quiver_Upload_Time` (scraping/processing), and `last_modified`; these are **not verified publication evidence**. Its public schema does not establish a stable transaction identity/revision chain or owner classification. The adapter therefore preserves every original row, uses explicitly unverified acquisition-local locators, retains ownership as unknown, and excludes these records from realistic execution. It does not invent source IDs, classify names by substring, or infer publication from filing. A successful download alone does not validate congressional copying.
+### Requirements for a future local disclosure import
 
-Use an authorized, source-verified normalized export when available:
+A future congressional benchmark can use an authorized, source-verified normalized local export. It must retain stable transaction identities, member/owner scope, amendment history, and evidence of public availability. Filing dates alone do not establish publication timing. Automated PDF extraction and verification are not implemented.
+
+Once suitable records are available, the existing import interface accepts:
 
 ```sh
 uv run python -m app.cli import-disclosures ../disclosure-imports/verified.json \
   --id pelosi-verified-v1 --provenance 'Authorized export; publication evidence and historical coverage description'
-# Inspect snapshot metadata via GET /api/disclosure-snapshots. Include every eligible
-# stock/ETF ticker plus VOO in acquisition, independently of momentum's universe.
-uv run python -m app.cli download --id yahoo-family-v1 --symbols VOO,AAPL,MSFT,NVDA \
-  --start 2020-01-02 --end 2024-12-31 --long-window 50
-uv run python -m app.cli benchmark --config ../configs/examples/pelosi-family.json \
-  --wait 120 --output ../reports/family-benchmark.md
 ```
 
-The shown symbols are an example, not a claim of disclosure coverage. Strict preflight lists missing securities; acquire the union under a new dataset ID. Delisted or unresolved securities must not be silently mapped to alternatives.
+Snapshot metadata is available through `GET /api/disclosure-snapshots`. Any future price acquisition must include every eligible disclosed stock/ETF plus VOO, independently of momentum's configured universe. Strict preflight rejects missing histories by default. Delisted or unresolved securities must not be silently mapped to alternatives.
 
 The export is an array, or `{"metadata":{"warnings":["coverage/revision limitations"]},"records":[...]}`. Each record includes:
 
@@ -85,12 +77,8 @@ docker compose exec api python -m app.cli download --id yahoo-baselines-v1 \
 docker compose exec api python -m app.cli benchmark --dataset yahoo-baselines-v1 \
   --start 2020-01-02 --end 2024-12-31 --universe VOO,AAPL,MSFT,NVDA \
   --wait 120 --output /data/reports/baselines.md
-# Copy a verified export into the API container, then import it there:
-docker compose cp disclosure-imports/verified.json api:/tmp/verified.json
-docker compose exec api python -m app.cli import-disclosures /tmp/verified.json \
-  --id pelosi-verified-v1 --provenance 'Authorized source-verified export'
 ```
 
-The compose environment accepts backend `QUIVER_API_KEY`. Do not commit credentials or downloaded exports. Local `datasets/`, `disclosure-imports/`, caches and `reports/` are ignored. Preserve the database and dataset volume together: snapshots are stored transactionally in the database; bars are stored in the dataset directory. Repeating `benchmark` with frozen IDs/configuration uses no network and produces matching deterministic financial results. `--suite` regenerates a report from existing results without simulation. Reports include configuration/input hashes, code revision, exposure, fees/slippage, return versus a same-suite VOO run, disclosure counts and limitations. A Git revision identifies the base commit; during development uncommitted edits must also be preserved.
+No disclosure-provider credentials are needed for the baseline workflow. Do not commit credentials or downloaded exports. Local `datasets/`, `disclosure-imports/`, caches and `reports/` are ignored. Preserve the database and dataset volume together: snapshots are stored transactionally in the database; bars are stored in the dataset directory. Repeating `benchmark` with frozen IDs/configuration uses no network and produces matching deterministic financial results. `--suite` regenerates a report from existing results without simulation. Reports include configuration/input hashes, code revision, exposure, fees/slippage, return versus a same-suite VOO run, disclosure counts and limitations. A Git revision identifies the base commit; during development uncommitted edits must also be preserved.
 
 Dashboard creation, history, details and comparison expose provider/coverage/price basis/warnings and member/owner scope. Comparison includes suite membership and blocked legs. Detailed exports retain disclosure audits and exact configuration.
