@@ -1,0 +1,17 @@
+{
+  "dataset": "yahoo-baselines-v1",
+  "strategies": ["buy_and_hold", "momentum"],
+  "start": "2020-01-02",
+  "end": "2024-12-31",
+  "universe": ["VOO", "AAPL", "MSFT", "NVDA"],
+  "initial_capital": 100000,
+  "short_window": 20,
+  "long_window": 50,
+  "rebalance": "weekly",
+  "max_position_weight": 0.1,
+  "max_exposure": 1,
+  "max_positions": 5,
+  "fee": 0,
+  "slippage_bps": 5,
+  "reinvest_dividends": false
+}

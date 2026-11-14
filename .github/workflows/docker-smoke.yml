@@ -1,0 +1,29 @@
+name: Docker smoke
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: PostgreSQL migrations and synthetic worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build stack and run synthetic smoke checks
+        run: bash scripts/docker-smoke.sh
+      - name: Upload report and container logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-smoke
+          path: reports/docker-smoke/

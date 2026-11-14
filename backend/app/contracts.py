@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, model_validator, ConfigDict
 
 STRATEGIES = ['buy_and_hold', 'momentum', 'congressional', 'single_agent', 'multi_agent']
 class Signal(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     ticker: str
     action: Literal['BUY', 'SELL', 'HOLD']
     target_weight: float = Field(default=0, ge=0, le=1)
@@ -15,7 +15,7 @@ class Proposals(BaseModel):
     signals: list[Signal] = Field(max_length=20)
     summary: str = Field(default='', max_length=3000)
 class Config(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     name: str = Field(default='Research experiment', max_length=100)
     strategy: Literal['buy_and_hold','momentum','congressional','single_agent','multi_agent'] = 'momentum'
     mode: Literal['historical','forward'] = 'historical'
@@ -33,6 +33,10 @@ class Config(BaseModel):
     fee: float = Field(default=0, ge=0)
     slippage_bps: float = Field(default=5, ge=0, le=1000)
     reinvest_dividends: bool = False
+    disclosure_snapshot: str | None = None
+    member_id: str = 'P000197'
+    owners: list[Literal['self','spouse','dependent','joint','unknown']] = ['self','spouse','dependent','joint','unknown']
+    missing_price_policy: Literal['fail','skip'] = 'fail'
     copy_method: Literal['equal','fixed','proportional'] = 'equal'
     fixed_allocation: float = Field(default=.05, gt=0, le=1)
     provider: Literal['ollama','compatible','openai'] = 'ollama'

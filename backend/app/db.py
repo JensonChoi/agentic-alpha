@@ -81,3 +81,16 @@ def persist_result(db,e,result):
     for i,decision in enumerate(result['decisions']):
         for j,trace in enumerate(decision.get('trace',[])): db.merge(RecommendationRow(id=f'{e.id}:{i}:{j}',experiment_id=e.id,payload=trace))
     db.merge(MetricRow(id=e.id,experiment_id=e.id,payload=result['metrics']))
+
+class DisclosureSnapshot(Base):
+    __tablename__ = 'disclosure_snapshots'
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    manifest: Mapped[dict] = mapped_column(JSON)
+    records: Mapped[list] = mapped_column(JSON)
+
+class BenchmarkSuite(Base):
+    __tablename__ = 'benchmark_suites'
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    created: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    config: Mapped[dict] = mapped_column(JSON)
+    members: Mapped[list] = mapped_column(JSON)

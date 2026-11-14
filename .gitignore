@@ -12,3 +12,7 @@ datasets/
 !.env.example
 *.db-shm
 *.db-wal
+reports/
+disclosure-imports/
+provider-cache/
+*.staged

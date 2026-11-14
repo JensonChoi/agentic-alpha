@@ -1,0 +1,14 @@
+services:
+  api:
+    ports: !reset []
+    environment: &smoke-env
+      API_TOKEN: ""
+      ENABLE_CLOUD: "false"
+      OPENAI_API_KEY: ""
+      QUIVER_API_KEY: ""
+  worker:
+    environment: *smoke-env
+  migrate:
+    environment: *smoke-env
+  frontend:
+    ports: !reset []

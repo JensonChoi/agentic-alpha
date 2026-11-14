@@ -51,11 +51,11 @@ uv run python -m app.cli import prices.csv --id research-v1 --provenance 'Source
 
 CSV/Parquet columns: `date,ticker,open,high,low,close,volume`. Prices must be **raw**, not dividend-adjusted. Use a new dataset ID for each immutable version. Optional `--disclosures disclosures.json` and `--actions actions.json` import JSON arrays. The API also accepts `POST /api/datasets/import`; see its OpenAPI schema.
 
-Disclosure records contain `id`, `person`, `ticker`, `action` (BUY/SELL), `transaction_date`, `disclosure_date`, optional `published_at`, `security_type` (stock/etf), `value_low`, `value_high`, and `provenance`. Date-only records are actionable at the next trading-session open. Options are never converted to shares. An `amends` identifier groups repeated disclosures; previously processed identities are not traded twice.
+Legacy dataset-embedded disclosure records contain `id`, `person`, `ticker`, `action` (BUY/SELL), `transaction_date`, `disclosure_date`, optional `published_at`, `security_type` (stock/etf), `value_low`, `value_high`, and `provenance`. These legacy records remain usable for synthetic demos. Real copying requires a separate snapshot with verified publication evidence; see [the normalized schema](docs/real-data.md#congressional-acquisition-and-verified-local-fallback). Options are never converted to shares. An `amends` identifier groups repeated disclosures; previously processed identities are not traded twice.
 
-Corporate actions contain `date,ticker,type` and either `ratio` for a split or per-share `amount` for a dividend. Dates must correspond to the supplied raw-price accounting convention. Dividend reinvestment is optional and uses an available opening price. Do not submit adjusted prices alongside distributions.
+Corporate actions contain `date,ticker,type` and either `ratio` for a split or per-share `amount` for a dividend. Dates must correspond to the supplied raw-price accounting convention. Dividend entitlement uses pre-opening holdings; cash credits use an explicit ex-date approximation. Optional reinvestment uses an available opening price with configured costs and risk checks. Do not submit adjusted prices alongside distributions.
 
-There is no bundled authenticated historical provider. Acquire authorized data separately; provider subscriptions, licensing and redistribution rights remain the operator's responsibility. Imports do not resolve survivorship bias, symbol changes, delistings, or source errors automatically. Missing execution prices never get forward-filled; stale last observations may mark existing holdings and should be considered when interpreting results.
+Yahoo acquisition and an authenticated Quiver snapshot adapter are available; see the [real-data workflow](docs/real-data.md). Provider subscriptions, licensing and redistribution rights remain the operator's responsibility. Imports do not resolve survivorship bias, symbol changes, delistings, or source errors automatically. Missing execution prices never get forward-filled; stale last observations may mark existing holdings and should be considered when interpreting results.
 
 ## Forward simulations
 
@@ -69,7 +69,7 @@ Signals use completed bars and fill at the following available session open with
 
 Experiments persist configurations, checkpoints, snapshots, proposals, decisions, fills, positions, metrics, and dataset checksums. Restart resumes saved daily state without calling models for already checkpointed decisions. A crash during a model call may require that call again. Configuration snapshots and exports support inspection; the export endpoint contains the complete recorded result.
 
-Returns use simulated equity. CAGR uses actual elapsed days / 365.25; volatility uses sample daily standard deviation × √252. Sharpe assumes zero risk-free rate. Sortino uses downside RMS and 252 sessions/year. Maximum drawdown compares equity to its running peak including initial capital. Undefined ratios are null. Turnover is gross traded notional / initial capital. Realized sales use FIFO lots; holding duration averages matched lot durations. Split-adjusted FIFO P&L is not yet supported, so realized-trade statistics on datasets with splits should not be used. Inference cost estimates use configured local cost/hour and call duration; cloud price estimates are not supplied.
+Returns use simulated equity. CAGR uses actual elapsed days / 365.25; volatility uses sample daily standard deviation × √252. Sharpe assumes zero risk-free rate. Sortino uses downside RMS and 252 sessions/year. Maximum drawdown compares equity to its running peak including initial capital. Undefined ratios are null. Turnover is gross traded notional / initial capital. Realized sales use FIFO lots; holding duration averages matched lot durations. New runs maintain split-aware FIFO lots and exact checkpoint state; legacy saved results retain their original limitations. Inference cost estimates use configured local cost/hour and call duration; cloud price estimates are not supplied.
 
 Compare date ranges, capital, costs, universes, information access and risk budgets before drawing conclusions. The passive benchmark's allocation budget differs from active defaults. No statistical-significance or investment-outperformance claims are made.
 
@@ -82,12 +82,12 @@ To require a passing run before merging, configure the `Python 3.12 tests` statu
 ```sh
 cd backend
 uv run pytest -q
-uv run python -m app.cli benchmark --output ../docs/benchmark-demo.md
+uv run python -m app.cli benchmark --strategies buy_and_hold,momentum,congressional --wait 120 --output ../reports/benchmark-demo.md
 cd ../frontend
 npm run build
 ```
 
-The benchmark report is generated from three real simulator runs on synthetic fixtures. See `docs/benchmark-demo.md`. API integration tests exercise create → queue → execute → inspect, authentication, and configuration validation.
+Run the worker separately before waiting for a report. The checked-in `docs/benchmark-demo.md` is a legacy synthetic example; new reports derive from persisted experiments and go in ignored `reports/`. API integration tests exercise create → queue → execute → inspect, authentication, and configuration validation.
 
 The optional OpenClaw skill and setup instructions are in `integrations/openclaw/`. OpenClaw is not a runtime dependency.
 
@@ -95,7 +95,7 @@ The optional OpenClaw skill and setup instructions are in `integrations/openclaw
 
 Compose binds published ports to loopback. Configure API_TOKEN and a TLS reverse proxy before nonlocal access. The dashboard's API client reads a token from session storage when supplied by an operator; there is no multi-user login UI. Inference endpoints are configured by the operator on the backend, never from agent output. Secrets stay on the backend.
 
-This implementation includes the primary local research flows but is not the entire production-quality specification. Outstanding capabilities include authenticated market-data adapters, richer historical news/fundamental tools, token-budget enforcement and retries, detailed cloud pricing, configurable risk-free rates, benchmark-relative excess returns, advanced comparison date controls, and automated browser testing. PostgreSQL/Docker and real inference require separate environment verification. Treat import provenance and corporate-action consistency as operator responsibilities.
+This implementation includes the primary local research flows but is not the entire production-quality specification. Outstanding capabilities include additional licensed market-data sources, source-verified Quiver transaction/publication identities, richer historical news/fundamental tools, token-budget enforcement, detailed cloud pricing, configurable risk-free rates, advanced comparison date controls, and automated browser testing. PostgreSQL/Docker and real inference require separate environment verification. Treat import provenance and corporate-action consistency as operator responsibilities.
 
 ## License
 
@@ -110,3 +110,7 @@ Accuracy, completeness, reliability, and profitability are not guaranteed. Synth
 Anyone who uses the software's outputs for investment decisions or adapts it for real-money trading does so at their own risk and is responsible for independently evaluating the software, data, decisions, and applicable requirements. Such adaptations are not endorsed by the project's authors or contributors.
 
 The software is provided without warranty under the MIT License. To the fullest extent permitted by applicable law, the authors and copyright holders disclaim liability for trading losses, lost profits, or other damages arising from use of the software or its outputs, including modified versions and real-money adaptations. This notice supplements the project's documentation and does not modify the MIT License or exclude liability that cannot lawfully be excluded.
+
+## Real-data baselines and family disclosures
+
+See [the complete acquisition, benchmark and offline reproduction workflow](docs/real-data.md). The `benchmark` command now queues persisted experiments through the existing worker; it no longer runs a separate simulator. Default strategies are VOO and momentum. Explicit congressional requests without usable verified records remain blocked in the persisted suite. [Baseline configuration](configs/examples/real-baselines.json) and [three-strategy family configuration](configs/examples/pelosi-family.json) provide examples. All execution remains simulated.
