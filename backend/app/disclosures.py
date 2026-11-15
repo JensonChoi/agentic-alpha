@@ -86,8 +86,12 @@ def load_snapshot(identifier: str) -> tuple[list[dict], dict]:
     return records, manifest
 
 
-def availability(d: dict) -> pd.Timestamp | None:
+def availability(d: dict, policy: str = 'verified') -> pd.Timestamp | None:
     if not d.get('identity_verified', True): return None
+    if policy == 'filing_date':
+        filing = d.get('filing_date')
+        if not filing or filing < d['transaction_date']: return None
+        return (pd.Timestamp(filing) + pd.Timedelta(days=1)).tz_localize('America/New_York').tz_convert('UTC') - pd.Timedelta(nanoseconds=1)
     quality = d.get('availability_quality')
     if quality == 'verified_timestamp': return pd.Timestamp(d['published_at']).tz_convert('UTC')
     if quality == 'verified_date': return (pd.Timestamp(d['published_date']) + pd.Timedelta(days=1)).tz_localize('America/New_York').tz_convert('UTC') - pd.Timedelta(nanoseconds=1)
@@ -98,7 +102,7 @@ def selected_records(c, records: list[dict]) -> tuple[list[dict], list[dict]]:
     selected, skipped = [], []
     for d in records:
         reason = None
-        when = availability(d)
+        when = availability(d, c.availability_policy)
         if d['member_id'] != c.member_id or d['owner'] not in c.owners: reason = 'outside member/owner scope'
         elif when is None: reason = 'unverified availability or identity'
         elif not (pd.Timestamp(c.start).tz_localize('America/New_York') <= when < (pd.Timestamp(c.end)+pd.Timedelta(days=1)).tz_localize('America/New_York')): reason = 'outside experiment publication range; starting portfolio is cash'
@@ -108,6 +112,6 @@ def selected_records(c, records: list[dict]) -> tuple[list[dict], list[dict]]:
     return selected, skipped
 
 
-def events_for_session(records: list[dict], day, seen: set[str]) -> list[dict]:
+def events_for_session(records: list[dict], day, seen: set[str], policy: str = 'verified') -> list[dict]:
     opening = xcals.get_calendar('XNYS').session_open(day)
-    return sorted([d for d in records if availability(d) < opening and d['source_id']+':'+d['revision'] not in seen], key=lambda d:(availability(d), d.get('source_order') if d.get('source_order') is not None else 0, d['source_id'], d['revision']))
+    return sorted([d for d in records if availability(d, policy) is not None and availability(d, policy) < opening and d['source_id']+':'+d['revision'] not in seen], key=lambda d:(availability(d, policy), d.get('source_order') if d.get('source_order') is not None else 0, d['source_id'], d['revision']))

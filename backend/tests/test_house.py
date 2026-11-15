@@ -207,3 +207,77 @@ def test_duplicate_index_retrieval_keeps_document_identity():
     with zipfile.ZipFile(raw,'w') as z:z.writestr('2024FD.xml','<FinancialDisclosure>'+member+member+'</FinancialDisclosure>')
     rows,total=parse_index(raw.getvalue(),2024,'P000197')
     assert len(rows)==1 and total==2
+
+async def test_filing_date_study_preserves_unverified_sources_and_next_open():
+    from test_engine import fixture
+    from app.engine import simulate
+    from app.contracts import Config
+    from app.disclosures import selected_records
+    f,m=fixture()
+    record=disclosure(availability_quality='unverified',published_at=None,filing_date='2024-04-05')
+    m['disclosures']=[record]
+    m['disclosure_snapshot']={'provider':'house','quarantines':[{'reason':'Synthetic unresolved row'}]}
+    base=Config(strategy='congressional',disclosure_snapshot='test',start='2024-04-01',end='2024-04-30')
+    assert not selected_records(base,[record])[0]
+    study=base.model_copy(update={'availability_policy':'filing_date','disclosure_coverage_policy':'skip_quarantined'})
+    result=await simulate(study,f,m)
+    assert result['trades'][0]['date']=='2024-04-08'
+    assert result['failures'] and 'ASSUMED' in result['availability_assumption']
+    assert record['availability_quality']=='unverified' and record['published_at'] is None
+    assert result['disclosure_counts']['assumed_filing_date_eligible']==1
+    invalid={**record,'filing_date':None}
+    assert not selected_records(study,[invalid])[0]
+
+
+def test_filing_date_preflight_keeps_price_failures_strict(storage,tmp_path):
+    from app import data
+    from app.contracts import Config
+    from app.experiments import inputs,validate
+    from test_engine import fixture
+    imported(storage,tmp_path)
+    f,_=fixture();data.register('market',f,'Synthetic')
+    c=Config(strategy='congressional',disclosure_snapshot='house',dataset='market',start='2024-04-01',end='2024-04-30',availability_policy='filing_date')
+    frame,manifest=inputs(c)
+    validate(c,frame,manifest)
+    manifest['disclosure_snapshot']['quarantines']=[{'reason':'Synthetic'}]
+    with pytest.raises(ValueError,match='quarantines'):validate(c,frame,manifest)
+    c=c.model_copy(update={'disclosure_coverage_policy':'skip_quarantined'})
+    validate(c,frame,manifest)
+    with pytest.raises(ValueError,match='missing'):validate(c,frame[frame.ticker!='AAPL'],manifest)
+
+
+def test_split_transaction_preserves_both_pages_and_unsupported_exercise():
+    result=parse_pdf(pdf(pages=2,split_transaction=True),DOC)
+    assert not result['quarantines']
+    assert len(result['records'])==2
+    joined=next(d for d in result['records'] if d['ticker']=='TEST')
+    assert joined['source_id']=='house:900001:p1:t1:tail'
+    assert joined['action']=='UNSUPPORTED'
+    assert (joined['value_low'],joined['value_high'])==(50001,100000)
+    assert joined['original']['page']==1
+    assert joined['original']['continuations'][0]['page']==2
+    assert 'Synthetic split company Stock (TEST)' in joined['original']['cells'][2]
+
+
+def test_conflicting_or_missing_continuation_remains_quarantined():
+    result=parse_pdf(pdf(pages=2,split_transaction=True,conflicting_continuation=True),DOC)
+    assert result['quarantines']
+    assert all(d['ticker']!='TEST' for d in result['records'])
+    orphan=parse_pdf(pdf(pages=1,split_transaction=True),DOC)
+    assert any(q.get('page')==1 for q in orphan['quarantines'])
+
+
+@pytest.mark.parametrize('amount,expected',[('$15.00',15),('$1,234.56',1234.56),('$0.00',0)])
+def test_exact_amount_exchange_is_preserved_without_stock_trade(amount,expected):
+    result=parse_pdf(pdf([dict(ticker='TEST',action='E',amount_first=amount,amount_last='',note='Corporate spinoff')]),DOC)
+    assert not result['quarantines']
+    row=result['records'][0]
+    assert row['value_low']==row['value_high']==expected
+    assert row['original_value_range']==amount and row['original']['amount_kind']=='exact'
+    assert row['action']=='UNSUPPORTED'
+
+
+@pytest.mark.parametrize('amount',['$1,23','$15.0','$15.000','-$15.00','$100 -','$100 - $50'])
+def test_malformed_amounts_stay_quarantined(amount):
+    result=parse_pdf(pdf([dict(amount_first=amount,amount_last='')]),DOC)
+    assert result['quarantines'] and not result['records']

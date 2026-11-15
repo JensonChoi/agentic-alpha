@@ -29,7 +29,7 @@ def parser():
         house.add_argument('--timeout',type=float,default=20); house.add_argument('--interval',type=float,default=1)
     review=sub.add_parser('correct-disclosures'); review.add_argument('file'); review.add_argument('--source',required=True); review.add_argument('--id',required=True); review.add_argument('--provenance',required=True)
     run=sub.add_parser('benchmark'); run.add_argument('--config'); run.add_argument('--suite',help='Report/wait for an existing suite without creating jobs'); run.add_argument('--output',default='reports/benchmark.md'); run.add_argument('--wait',type=float,default=0); run.add_argument('--strategies')
-    for name in ('dataset','start','end','universe','rebalance','disclosure_snapshot','member_id','owners','copy_method','missing_price_policy'): run.add_argument('--'+name.replace('_','-'))
+    for name in ('dataset','start','end','universe','rebalance','disclosure_snapshot','member_id','owners','copy_method','missing_price_policy','availability_policy','disclosure_coverage_policy'): run.add_argument('--'+name.replace('_','-'))
     for name in ('short_window','long_window','max_positions'): run.add_argument('--'+name.replace('_','-'),type=int)
     for name in ('initial_capital','max_position_weight','max_exposure','fee','slippage_bps','fixed_allocation'): run.add_argument('--'+name.replace('_','-'),type=float)
     run.add_argument('--reinvest-dividends',action=argparse.BooleanOptionalAction,default=None)

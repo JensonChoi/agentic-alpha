@@ -4,6 +4,7 @@ Source text is data only. Unrecognized layouts and amendments require review.
 No filing date is promoted to historical public availability.
 """
 from dataclasses import dataclass
+from decimal import Decimal
 from datetime import date, datetime, timezone
 from email.utils import parsedate_to_datetime
 from hashlib import sha256
@@ -28,7 +29,7 @@ PORTAL = BASE + '/FinancialDisclosure/ViewReport'
 MAPPING = 'https://clerk.house.gov/members/P000197'
 OWNER_EVIDENCE = 'https://ethics.house.gov/wp-content/uploads/2023/12/FINAL-2021-FD-Instructions_1.pdf'
 ASSET_EVIDENCE = 'https://fd.house.gov/reference/asset-type-codes.aspx'
-PARSER = 'house-ptr-layout/2'
+PARSER = 'house-ptr-layout/3'
 MAX_BYTES = 20 * 1024 * 1024
 MAX_PAGES = 100
 MAX_DOCUMENTS = 500
@@ -121,11 +122,66 @@ def _fields(page, table, row) -> tuple[list[str], str]:
     return values, original
 
 
+
+def amount_bounds(amount: str) -> tuple[float, float, str]:
+    money = r'\$(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{2})?'
+    if re.fullmatch(money, amount):
+        value = float(Decimal(amount[1:].replace(',', '')))
+        return value, value, 'exact'
+    match = re.fullmatch(f'({money})\\s*-\\s*({money})', amount)
+    if not match:
+        raise ValueError('Unresolved amount range or exact dollar value')
+    low, high = (float(Decimal(v[1:].replace(',', ''))) for v in match.groups())
+    if high < low:
+        raise ValueError('Invalid value range')
+    return low, high, 'range'
+
+
+def _preceding_fragment(pdf, number: int, table, row_no: int, values: list[str]):
+    """Join only complementary columns on adjacent pages, never economic similarity.
+
+    A borderless final row can escape pdfplumber's table detection. Its next-page
+    continuation must be the first body row and cannot repeat owner/action/dates.
+    """
+    if number < 2 or row_no != 1 or any(values[i] for i in (0, 1, 3, 4, 5, 7)):
+        return None
+    if not re.fullmatch(r'\$[\d,]+(?:\.\d{2})?', values[6]):
+        return None
+    previous = pdf.pages[number - 2]
+    tables = [t for t in previous.find_tables() if t.extract() and
+              [str(v or '').replace('\n', ' ') for v in t.extract()[0]][:5] ==
+              ['ID', 'Owner', 'Asset', 'Transaction Type', 'Date']]
+    if not tables:
+        return None
+    prior = tables[-1]
+    columns = prior.rows[0].cells
+    if len(columns) != 8 or any(c is None for c in columns):
+        return None
+    if any(abs(a[0]-b[0]) > 2 or abs(a[2]-b[2]) > 2 for a,b in zip(columns, table.rows[0].cells)):
+        return None
+    words = [w for w in previous.extract_words() if w['top'] >= prior.bbox[3]]
+    if not words or max(w['bottom'] for w in words)-min(w['top'] for w in words) > 50:
+        return None
+    bbox = (prior.bbox[0], min(w['top'] for w in words)-1, prior.bbox[2], max(w['bottom'] for w in words)+1)
+    prefix = [' '.join((previous.crop((c[0],bbox[1],c[2],bbox[3])).extract_text() or '').split()) for c in columns]
+    if prefix[0] or prefix[7] or prefix[1] not in OWNERS or prefix[3] not in ('P','S','S (partial)','S (full)','E'):
+        return None
+    if not all(re.fullmatch(r'\d{2}/\d{2}/\d{4}', prefix[i]) for i in (4,5)):
+        return None
+    if not prefix[2] or re.search(r'\[[A-Z0-9]{2}\]|\([A-Z][A-Z0-9.-]*\)', prefix[2]) or not re.fullmatch(r'\$[\d,]+(?:\.\d{2})?\s*-',prefix[6]):
+        return None
+    merged = [a+' '+b if a and b else a or b for a,b in zip(prefix,values)]
+    fragment = dict(page=number-1, table=len(tables), bbox=list(bbox), cells=prefix,
+                    original_text=previous.crop(bbox).extract_text() or '')
+    return merged, fragment
+
 def parse_pdf(raw: bytes, document: dict, max_pages: int = MAX_PAGES) -> dict:
     if len(raw) > MAX_BYTES or not raw.startswith(b'%PDF-'):
         raise ValueError('Invalid PDF signature or byte limit')
     records, quarantines, pages = [], [], []
     last_locator = None
+    coverage = {}
+    recognized_pages = set()
     docid = document['document_id']
     doc_hash = checksum(raw)
     with pdfplumber.open(BytesIO(raw)) as pdf:
@@ -146,6 +202,8 @@ def parse_pdf(raw: bytes, document: dict, max_pages: int = MAX_PAGES) -> dict:
                 if not extracted or [str(v or '').replace('\n', ' ') for v in extracted[0]][:5] != ['ID', 'Owner', 'Asset', 'Transaction Type', 'Date']:
                     continue
                 recognized = True
+                recognized_pages.add(number)
+                coverage.setdefault(number, []).append(table.bbox)
                 from types import SimpleNamespace
                 body = list(enumerate(table.rows[1:], 1))
                 groups = []
@@ -175,6 +233,15 @@ def parse_pdf(raw: bytes, document: dict, max_pages: int = MAX_PAGES) -> dict:
                     evidence = dict(document_id=docid, file_sha256=doc_hash, page=number, table=table_no, row=row_no, bbox=list(row.bbox), retrieved_at=document['retrieved_at'], parser_version=PARSER, original_text=page.crop(row.bbox).extract_text() or '')
                     try:
                         values, original = _fields(page, table, row)
+                        joined = _preceding_fragment(pdf, number, table, row_no, values)
+                        if joined:
+                            values, fragment = joined
+                            evidence['continuations'] = [dict(page=number, table=table_no, row=row_no, bbox=list(row.bbox), original_text=original)]
+                            evidence.update(page=fragment['page'], table=fragment['table'], row='tail', bbox=fragment['bbox'], preceding_fragment=fragment)
+                            original = fragment['original_text'] + '\n' + original
+                            evidence['original_text'] = original
+                            locator = f"house:{docid}:p{fragment['page']}:t{fragment['table']}:tail"
+                            last_locator = locator
                         _, owner, asset, action, traded, notified, amount, _ = values
                         if owner not in OWNERS:
                             raise ValueError('Unknown owner code')
@@ -183,9 +250,7 @@ def parse_pdf(raw: bytes, document: dict, max_pages: int = MAX_PAGES) -> dict:
                         security = {'ST': 'stock', 'EF': 'etf'}.get(code, 'unsupported')
                         if len(ticker) != 1 and security != 'unsupported':
                             raise ValueError('Missing or ambiguous explicit ticker')
-                        bounds = re.fullmatch(r'\$([\d,]+)\s*-\s*\$([\d,]+)', amount)
-                        if not bounds:
-                            raise ValueError('Unresolved amount range')
+                        low, high, amount_kind = amount_bounds(amount)
                         if (re.search(r'\bamend\w*\b', combined.split('ID Owner Asset', 1)[0], re.I) or re.search(r'\b(amend\w*|correct\w*)\b', original, re.I)) or ': New' not in original:
                             raise ValueError('Amendment/status requires evidenced row linkage')
                         normalized_action = {'P': 'BUY', 'S': 'SELL', 'S (partial)': 'SELL', 'S (full)': 'SELL', 'E': 'UNSUPPORTED'}.get(action)
@@ -194,15 +259,20 @@ def parse_pdf(raw: bytes, document: dict, max_pages: int = MAX_PAGES) -> dict:
                         # An exercise, gift, or merger is not an ordinary stock purchase/sale.
                         if re.search(r'\b(option|options|exercis\w*|gift\w*|merger|exchange|contribution|donor-advised)\b', original, re.I):
                             normalized_action = 'UNSUPPORTED'
-                        evidence.update(cells=values, asset_code=code, notification_date=notified, sale_description=action, diagnostics=['Availability unverified; explicit source ticker only; no symbol remapping'])
-                        record = Disclosure(source_id=locator, revision=doc_hash, member_id='P000197', owner=OWNERS[owner], ticker=ticker[0] if len(ticker)==1 else '', security_type=security, action=normalized_action, transaction_date=datetime.strptime(traded, '%m/%d/%Y').date(), filing_date=document['filing_date'], source_url=document['source_url'], ingested_at=document.get('ingested_at', document['retrieved_at']), value_low=int(bounds[1].replace(',', '')), value_high=int(bounds[2].replace(',', '')), original_value_range=amount, original=evidence)
+                        evidence.update(cells=values, amount_kind=amount_kind, asset_code=code, notification_date=notified, sale_description=action, diagnostics=['Availability unverified; explicit source ticker only; no symbol remapping'])
+                        record = Disclosure(source_id=locator, revision=doc_hash, member_id='P000197', owner=OWNERS[owner], ticker=ticker[0] if len(ticker)==1 else '', security_type=security, action=normalized_action, transaction_date=datetime.strptime(traded, '%m/%d/%Y').date(), filing_date=document['filing_date'], source_url=document['source_url'], ingested_at=document.get('ingested_at', document['retrieved_at']), value_low=low, value_high=high, original_value_range=amount, original=evidence)
                         records.append(record.model_dump(mode='json'))
+                        if joined:
+                            coverage.setdefault(fragment['page'], []).append(fragment['bbox'])
                     except (ValueError, AttributeError) as exc:
                         quarantines.append(dict(source_id=locator, reason=str(exc), original=evidence))
-            # Dates outside recognized tables may mean silently omitted transactions.
-            covered = [t.bbox for t in page.find_tables() if t.extract() and (t.extract()[0][0] or '') == 'ID']
+        # Defer coverage reconciliation until adjacent-page joins have succeeded.
+        for number, (page, text) in enumerate(zip(pdf.pages, texts), 1):
+            if not text.strip():
+                continue
+            covered = coverage.get(number, [])
             outside = [w for w in page.extract_words() if re.fullmatch(r'\d{2}/\d{2}/\d{4}', w['text']) and not any(b[1] <= w['top'] <= b[3] for b in covered)]
-            if not recognized and not re.search(r'Digitally Signed:|I CERTIFY', text) or len(outside) > (1 if 'Digitally Signed:' in text else 0):
+            if (number not in recognized_pages and not re.search(r'Digitally Signed:|I CERTIFY', text)) or len(outside) > (1 if 'Digitally Signed:' in text else 0):
                 quarantines.append(dict(document_id=docid, page=number, reason='Unrecognized page/transaction layout; review entire page', original_text=text))
     if not records and not quarantines:
         quarantines.append(dict(document_id=docid, reason='No recognized transaction rows'))

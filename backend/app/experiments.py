@@ -26,7 +26,7 @@ def validate(config, frame, manifest):
         records, skipped = selected_records(config, manifest['disclosures'])
         if not records: raise ValueError('Congressional benchmark blocked: no usable disclosures in selected scope/range')
         quality = manifest.get('disclosure_snapshot', {})
-        if quality.get('provider') == 'house' and config.missing_price_policy == 'fail' and (quality.get('quarantines') or any(d['availability_quality']=='unverified' for d in manifest['disclosures'])):
+        if quality.get('provider') == 'house' and config.missing_price_policy == 'fail' and ((quality.get('quarantines') and config.disclosure_coverage_policy=='fail') or (config.availability_policy=='verified' and any(d['availability_quality']=='unverified' for d in manifest['disclosures']))):
             raise ValueError('Congressional benchmark blocked: unresolved House quarantines or publication evidence; explicit partial policy required')
         required = {d['ticker'] for d in records} | {'VOO'}
     missing = required - set(manifest['symbols'])

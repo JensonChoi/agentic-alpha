@@ -4,7 +4,7 @@ from pathlib import Path
 import zipfile
 
 
-def pdf(rows=None, docid='900001', pages=1, scanned=False, split_notes=False, continuation=False):
+def pdf(rows=None, docid='900001', pages=1, scanned=False, split_notes=False, continuation=False, split_transaction=False, conflicting_continuation=False):
     rows = rows if rows is not None else [dict(owner='SP', ticker='AAPL', action='P')]
     objects = [b'', b'', b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>']
     page_ids = []
@@ -29,6 +29,13 @@ def pdf(rows=None, docid='900001', pages=1, scanned=False, split_notes=False, co
                 text(x+2, 685, value)
             for i, row in enumerate(rows):
                 y = 655 - 60*i
+                if split_transaction and page_number and i==0:
+                    text(82,y,'Stock (TEST) [ST]')
+                    text(492,y,'$100,000')
+                    if conflicting_continuation: text(47,y,'SP')
+                    text(82,y-24,'Filing Status: New')
+                    text(82,y-36,'Description: Exercised 50 call options.')
+                    continue
                 if continuation and page_number and i==0:
                     text(82, y, 'Description: Gift of shares continued from preceding page')
                     continue
@@ -36,14 +43,17 @@ def pdf(rows=None, docid='900001', pages=1, scanned=False, split_notes=False, co
                     ops.append(f'20 {y-16} m 610 {y-16} l S')
                 asset = row.get('asset', 'Synthetic wrapped company')
                 ticker = row.get('ticker', 'AAPL')
-                values = ['', row.get('owner', ''), asset, row.get('action', 'P'), row.get('date','03/01/2024'), '03/02/2024', '$1,001 -', '']
+                values = ['', row.get('owner', ''), asset, row.get('action', 'P'), row.get('date','03/01/2024'), '03/02/2024', row.get('amount_first','$1,001 -'), '']
                 for x, value in zip(xs, values): text(x+2, y, value)
                 text(82, y-10, (f'({ticker}) ' if ticker else '') + '['+row.get('code','ST')+']')
-                text(492, y-10, '$15,000')
+                text(492, y-10, row.get('amount_last','$15,000'))
                 text(82, y-24, 'Filing Status: '+row.get('status','New'))
                 text(82, y-36, row.get('note','SYNTHETIC row'))
-            text(30, bottom-15, 'I CERTIFY these statements are true, complete, and correct.')
-            text(30, bottom-25, 'Digitally Signed: Hon. Nancy Pelosi , 04/01/2024')
+            if split_transaction and page_number==0:
+                for x,value in zip(xs,['','SP','Synthetic split company','P','03/01/2024','03/02/2024','$50,001 -','']): text(x+2,bottom-15,value)
+            else:
+                text(30, bottom-15, 'I CERTIFY these statements are true, complete, and correct.')
+                text(30, bottom-25, 'Digitally Signed: Hon. Nancy Pelosi , 04/01/2024')
         stream = '\n'.join(ops).encode()
         page_id, content_id = len(objects)+1, len(objects)+2
         page_ids.append(page_id)

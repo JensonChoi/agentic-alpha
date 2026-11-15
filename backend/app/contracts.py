@@ -34,6 +34,8 @@ class Config(BaseModel):
     slippage_bps: float = Field(default=5, ge=0, le=1000)
     reinvest_dividends: bool = False
     disclosure_snapshot: str | None = None
+    availability_policy: Literal['verified', 'filing_date'] = 'verified'
+    disclosure_coverage_policy: Literal['fail', 'skip_quarantined'] = 'fail'
     member_id: str = 'P000197'
     owners: list[Literal['self','spouse','dependent','joint','unknown']] = ['self','spouse','dependent','joint','unknown']
     missing_price_policy: Literal['fail','skip'] = 'fail'

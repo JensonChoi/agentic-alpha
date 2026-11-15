@@ -1,4 +1,38 @@
-# House PDF and Pelosi-family validation — November 14, 2026
+# House PDF and Pelosi-family validation
+
+## Updated study — November 15, 2026
+
+**SIMULATION ONLY — FILING-DATE ASSUMPTION.** The inclusive **2026-01-01 through 2026-11-01** study now completes all three strategies. Publication is assumed on filing date, with execution at the next exchange session open. Historical publication remains unverified; the default verified-availability policy still blocks these records.
+
+Parser `house-ptr-layout/3` resolves the three prior diagnostics in document 20033725:
+
+- TEM begins below the detected table on page 2 and continues in the first body row on page 3. Matching column geometry and complementary owner/action/date/amount fields permit a deterministic adjacent-page join. Both source fragments and their bounding boxes are retained. The exercise note makes this an unsupported option exercise, not an ordinary purchase.
+- VSNT on page 3 reports an exact `$15.00`. Exact dollar values now retain equal lower/upper bounds and an explicit amount kind. The exchange action remains unsupported.
+
+Rendered original pages were checked against both entries. Conflicting, orphaned, or ambiguous continuations and malformed amounts still quarantine. No OCR, LLM extraction, inferred ticker, or source-date certification was introduced.
+
+The new immutable `house-pelosi-2026-v3` snapshot reparses the same five preserved official PDFs: **29 normalized rows, 21 unsupported, zero quarantines**. All 29 remain unverified for historical availability. Parsing is complete for supplied documents; historical discovery and revisions remain uncertain. Older snapshots and the blocked suite below remain intact. Manifest hash: `905f69550011a2b419ff1ba958bb6054e45e8209d3e01a6c95e2c0a7ea6dd59d`.
+
+Configuration: [2026 filing-date study](../configs/examples/pelosi-family-2026-filing-date.json), with strict missing-price and disclosure-coverage policies. The date range, price snapshot, momentum universe, 51 warmup sessions, cash starts, risk caps, fees, slippage, and dividend conventions are unchanged from the study below.
+
+| Strategy | Outcome | Return | Final equity | Average exposure | Maximum drawdown | Fills |
+|---|---|---:|---:|---:|---:|---:|
+| VOO | Completed | 11.0169% | 111,016.89 | 99.6538% | −8.8945% | 1 |
+| Momentum | Completed | −0.1290% | 99,871.00 | 63.4590% | −8.6616% | 146 |
+| Congressional | Completed under filing-date assumption | −4.0534% | 95,946.56 | 10.4757% | −18.5098% | 2 |
+
+Eight eligible disclosure events survive asset/action filtering. Five January sales encounter no starting holdings. August purchases produce two capped positions, BE and INTC, at the August 24 open following the August 21 filing date. The two recovered entries add no eligible trades. Congressional excess versus matched VOO is −15.0703 percentage points. This is a disclosure-following simulation, not the family's actual investment performance.
+
+Persisted suite: `d982acfe-822c-4d50-a3ab-abeb69165e74`. Experiments: VOO `ded2e0d8-b101-46bb-bba4-b4fd1891f187`, momentum `2f2775ad-abab-4813-9eab-4f9aeaf3b195`, congressional `bccabdf3-6073-459c-9676-c9bd8ff6d35f`. The normal worker completed all three; metrics, fills, and every equity point reproduced exactly offline. Full local report: ignored `reports/pelosi-family-2026-filing-date-v3.md`. Configuration hash: `9c473c3998028346d6f031542e44c68213b34283889054d83a6e6fb4105a1bc8`. Execution implementation hashes in that report identify the worktree code independently of its base commit.
+
+Validation: **88 backend tests passed**, frontend production build passed, and Docker/PostgreSQL synthetic ingestion, three-strategy execution, reporting, and restart verification passed. Regression fixtures cover split rows, conflicting/orphaned continuations, exact and malformed amounts, and assumed timing without changing source verification. No migration or ledger arithmetic change.
+
+Native Chrome inspection confirmed the three completed results and filing-date notice. Green is VOO, blue momentum, and gold congressional. The earlier screenshot below remains historical.
+
+![2026 comparison under the filing-date assumption](images/house-filing-date-2026.png)
+
+## Historical validation — November 14, 2026
+
 
 **SIMULATION ONLY — NO REAL MONEY.** The requested January 1–November 1, 2026 suite was persisted: VOO and momentum completed; congressional is blocked. No synthetic disclosure substituted for missing historical evidence.
 

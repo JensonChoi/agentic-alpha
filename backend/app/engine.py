@@ -100,7 +100,7 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
                 cash=qty*D(action['amount']); ledger.cash+=cash
                 if c.reinvest_dividends and cash>0: reinvest[ticker] = cash
         if c.strategy=='congressional' and normalized:
-            events = events_for_session(records, day, seen)
+            events = events_for_session(records, day, seen, c.availability_policy)
             candidates = []
             for d in events:
                 seen.add(d['source_id']+':'+d['revision'])
@@ -237,9 +237,15 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
     if normalized and not any(d['reason']=='eligible' for d in disclosure_audit):
         result['failures']+=1
         result['metrics']['total_return']=None
-    if normalized and manifest.get('disclosure_snapshot', {}).get('provider') == 'house' and (manifest['disclosure_snapshot'].get('quarantines') or any(d['availability_quality']=='unverified' for d in manifest.get('disclosures', []))):
+    if normalized and manifest.get('disclosure_snapshot', {}).get('provider') == 'house' and (manifest['disclosure_snapshot'].get('quarantines') or (c.availability_policy=='verified' and any(d['availability_quality']=='unverified' for d in manifest.get('disclosures', [])))):
         result['failures'] += 1
     result['warnings']=manifest.get('warnings',[]) + manifest.get('disclosure_snapshot',{}).get('warnings',[]) + ['Dividend cash is credited on ex-date, not payment date']
+    if normalized and c.availability_policy=='filing_date':
+        result['availability_assumption'] = 'ASSUMED publication on filing date; execution at next exchange session open. Not verified historical availability.'
+        result['warnings'].append(result['availability_assumption'])
+        result['disclosure_counts']['assumed_filing_date_eligible'] = len(records)
+    if normalized and manifest.get('disclosure_snapshot', {}).get('quarantines'):
+        result['warnings'].append('Partial disclosure coverage: quarantined rows/pages excluded; see snapshot diagnostics')
     if c.missing_price_policy=='skip':
         required = {d['ticker'] for d in records} if normalized else ({'VOO'} if c.strategy=='buy_and_hold' else set(c.universe))
         missing = {ticker:len(sessions(c.start,c.end).difference(pd.DatetimeIndex(frame[frame.ticker==ticker].date))) for ticker in required}
