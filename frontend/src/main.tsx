@@ -44,11 +44,12 @@ function Provenance({dataset,config,detail}:{dataset:string;config?:Record<strin
   const d=datasets.find((item:any)=>item.id===dataset);
   return <details className="notice"><summary>{dataset} · {d?.synthetic?'SYNTHETIC DEMO':d?.provider||'Imported data'} · {d?.start} — {d?.end}</summary>
     {config?.availability_policy==='filing_date'&&<p><strong>FILING-DATE ASSUMPTION STUDY</strong> · Publication assumed on filing date; execution at next session open. Historical availability remains unverified.</p>}
+    {config?.starting_holdings_snapshot&&<p><strong>INFERRED STARTING HOLDINGS</strong> · Pre-start purchases and explicit partial sales imply residual holdings; other sales remove candidates. Equal capped allocation at first study open. Lookback: {config.starting_holdings_since} to before {config.start}. Historical snapshot: {config.starting_holdings_snapshot}. Actual quantities remain unknown.</p>}
     <p>Price basis: {d?.price_basis||'Legacy / unverified'}. {d?.action_timing}</p>
     {(d?.warnings||[]).map((warning:string)=><p key={warning}>{warning}</p>)}
     {config?.strategy==='congressional'&&<p>Disclosure snapshot: {config.disclosure_snapshot||'Synthetic / legacy'} · Member: {config.member_id} · Owners: {(config.owners||[]).join(', ')}. Unknown ownership remains unknown.</p>}
     {snapshot&&<p>House documents: {snapshot.counts?.documents??'unknown'} · Parsed rows: {snapshot.count??0} · Quarantines: {snapshot.counts?.quarantines??0}. Availability: {JSON.stringify(snapshot.availability)}. Coverage: {JSON.stringify(snapshot.quality)}.</p>}
-    <pre>{JSON.stringify({coverage:d?.coverage,hash:d?.content_sha256||d?.sha256,disclosure:snapshot,counts:detail?.disclosure_counts,execution:detail?.execution_provenance,warnings:detail?.warnings},null,2)}</pre>
+    <pre>{JSON.stringify({coverage:d?.coverage,hash:d?.content_sha256||d?.sha256,disclosure:snapshot,counts:detail?.disclosure_counts,starting_holdings:detail?.starting_holdings,starting_holdings_snapshot:detail?.provenance?.starting_holdings_snapshot,execution:detail?.execution_provenance,warnings:detail?.warnings},null,2)}</pre>
   </details>;
 }
 function Suites() {

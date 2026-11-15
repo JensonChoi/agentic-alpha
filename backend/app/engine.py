@@ -64,6 +64,13 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
     normalized = c.strategy=='congressional' and bool(c.disclosure_snapshot)
     records, skipped = selected_records(c, manifest.get('disclosures', [])) if normalized else ([], [])
     disclosure_audit.extend(skipped)
+    initial = manifest.get('starting_holdings', {}) if normalized else {}
+    if initial:
+        active = set(initial['candidates'])
+        seen = set(initial.get('processed', []))
+        copied = set(initial.get('copied', []))
+        weight = min(c.max_position_weight, c.max_exposure/max(1,len(initial['selected'])))
+        pending = [Signal(ticker=t, action='BUY', target_weight=weight, rationale='Inferred pre-start holdings: initial allocation') for t in initial['selected']]
     if resume:
         ledger.cash=D(resume.get('state',{}).get('exact_cash',resume['cash'])); ledger.positions={t:D(q) for t,q in resume.get('state',{}).get('exact_positions',resume['positions']).items()}
         ledger.fills=resume['trades']; ledger.ids={f['id'] for f in ledger.fills}
@@ -234,12 +241,16 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
     result['disclosure_counts']['filled_trades']=len(ledger.fills)
     result['disclosure_counts']['skipped']=sum(d['reason']!='eligible' for d in disclosure_audit)
     result['metrics']['slippage_cost']=sum(f.get('slippage_cost',0) for f in ledger.fills)
-    if normalized and not any(d['reason']=='eligible' for d in disclosure_audit):
+    if normalized and not initial.get('selected') and not any(d['reason']=='eligible' for d in disclosure_audit):
         result['failures']+=1
         result['metrics']['total_return']=None
     if normalized and manifest.get('disclosure_snapshot', {}).get('provider') == 'house' and (manifest['disclosure_snapshot'].get('quarantines') or (c.availability_policy=='verified' and any(d['availability_quality']=='unverified' for d in manifest.get('disclosures', [])))):
         result['failures'] += 1
     result['warnings']=manifest.get('warnings',[]) + manifest.get('disclosure_snapshot',{}).get('warnings',[]) + ['Dividend cash is credited on ex-date, not payment date']
+    if initial:
+        result['starting_holdings'] = initial
+        result['warnings'].append(initial['policy'])
+        result['warnings'].extend(manifest.get('starting_holdings_snapshot', {}).get('warnings', []))
     if normalized and c.availability_policy=='filing_date':
         result['availability_assumption'] = 'ASSUMED publication on filing date; execution at next exchange session open. Not verified historical availability.'
         result['warnings'].append(result['availability_assumption'])
@@ -247,7 +258,7 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
     if normalized and manifest.get('disclosure_snapshot', {}).get('quarantines'):
         result['warnings'].append('Partial disclosure coverage: quarantined rows/pages excluded; see snapshot diagnostics')
     if c.missing_price_policy=='skip':
-        required = {d['ticker'] for d in records} if normalized else ({'VOO'} if c.strategy=='buy_and_hold' else set(c.universe))
+        required = ({d['ticker'] for d in records} | set(initial.get('selected', []))) if normalized else ({'VOO'} if c.strategy=='buy_and_hold' else set(c.universe))
         missing = {ticker:len(sessions(c.start,c.end).difference(pd.DatetimeIndex(frame[frame.ticker==ticker].date))) for ticker in required}
         result['missing_sessions']={ticker:count for ticker,count in missing.items() if count}
         if result['missing_sessions']:

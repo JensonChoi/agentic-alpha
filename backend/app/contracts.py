@@ -34,6 +34,8 @@ class Config(BaseModel):
     slippage_bps: float = Field(default=5, ge=0, le=1000)
     reinvest_dividends: bool = False
     disclosure_snapshot: str | None = None
+    starting_holdings_snapshot: str | None = None
+    starting_holdings_since: date | None = None
     availability_policy: Literal['verified', 'filing_date'] = 'verified'
     disclosure_coverage_policy: Literal['fail', 'skip_quarantined'] = 'fail'
     member_id: str = 'P000197'
@@ -49,6 +51,11 @@ class Config(BaseModel):
     local_cost_per_hour: float = Field(default=0, ge=0)
     @model_validator(mode='after')
     def validate_config(self):
+        if self.starting_holdings_snapshot:
+            if self.strategy != 'congressional' or not self.disclosure_snapshot: raise ValueError('Starting holdings require normalized congressional strategy')
+            if not self.starting_holdings_since or self.starting_holdings_since >= self.start: raise ValueError('Starting holdings require lookback before start')
+            if self.copy_method != 'equal': raise ValueError('Inferred starting holdings require equal sizing')
+        elif self.starting_holdings_since: raise ValueError('Starting holdings require a snapshot')
         if self.end < self.start: raise ValueError('end precedes start')
         if self.short_window >= self.long_window: raise ValueError('short_window must be below long_window')
         if len(set(self.universe)) != len(self.universe): raise ValueError('Duplicate symbols')

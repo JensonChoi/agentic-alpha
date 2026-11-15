@@ -3,7 +3,7 @@ import pandas as pd
 from . import data
 from .data import sessions
 from .db import Experiment, ConfigRow
-from .disclosures import load_snapshot, selected_records
+from .disclosures import load_snapshot, selected_records, inferred_holdings
 from .provenance import digest, code_revision, implementation_hash
 
 
@@ -14,6 +14,10 @@ def inputs(config):
         records, provenance = load_snapshot(config.disclosure_snapshot)
         manifest['disclosure_snapshot'] = provenance
         manifest['disclosures'] = records
+    if config.starting_holdings_snapshot:
+        history, provenance = load_snapshot(config.starting_holdings_snapshot)
+        manifest['starting_holdings_snapshot'] = provenance
+        manifest['starting_holdings'] = inferred_holdings(config, history)
     return frame, manifest
 
 
@@ -24,11 +28,16 @@ def validate(config, frame, manifest):
     if config.strategy == 'congressional' and (config.disclosure_snapshot or not manifest.get('synthetic')):
         if not config.disclosure_snapshot: raise ValueError('Congressional benchmark blocked: select a verified disclosure snapshot')
         records, skipped = selected_records(config, manifest['disclosures'])
-        if not records: raise ValueError('Congressional benchmark blocked: no usable disclosures in selected scope/range')
+        if not records and not manifest.get('starting_holdings', {}).get('selected'): raise ValueError('Congressional benchmark blocked: no usable disclosures in selected scope/range')
         quality = manifest.get('disclosure_snapshot', {})
         if quality.get('provider') == 'house' and config.missing_price_policy == 'fail' and ((quality.get('quarantines') and config.disclosure_coverage_policy=='fail') or (config.availability_policy=='verified' and any(d['availability_quality']=='unverified' for d in manifest['disclosures']))):
             raise ValueError('Congressional benchmark blocked: unresolved House quarantines or publication evidence; explicit partial policy required')
-        required = {d['ticker'] for d in records} | {'VOO'}
+        initial = manifest.get('starting_holdings', {})
+        quality_initial = manifest.get('starting_holdings_snapshot', {})
+        if config.availability_policy=='verified' and quality_initial.get('availability', {}).get('unverified', 0): raise ValueError('Starting holdings blocked: unverified historical availability')
+        if quality_initial.get('quarantines'): raise ValueError('Starting holdings blocked: unresolved historical quarantines')
+        if any('ambiguous' in d['reason'] for d in initial.get('audit', [])): raise ValueError('Starting holdings blocked: ambiguous historical disclosures')
+        required = {d['ticker'] for d in records} | set(initial.get('selected', [])) | {'VOO'}
     missing = required - set(manifest['symbols'])
     if missing and config.missing_price_policy == 'fail': raise ValueError('Missing price histories: '+','.join(sorted(missing)))
     if config.mode == 'historical':
@@ -46,7 +55,7 @@ def create_experiment(config, session_factory=None, queued=False):
     frame, manifest = inputs(config)
     validate(config, frame, manifest)
     with (session_factory or data.Session)() as db:
-        row = Experiment(config=config.model_dump(mode='json'), status='queued' if queued else 'created', result={'execution_provenance':dict(version='2', implementation_hash=implementation_hash(), dataset_hash=manifest.get('content_sha256',manifest['sha256']), config_hash=digest(config.model_dump(mode='json')), disclosure_hash=manifest.get('disclosure_snapshot',{}).get('sha256'), code_revision=code_revision())})
+        row = Experiment(config=config.model_dump(mode='json'), status='queued' if queued else 'created', result={'execution_provenance':dict(version='2', implementation_hash=implementation_hash(), dataset_hash=manifest.get('content_sha256',manifest['sha256']), config_hash=digest(config.model_dump(mode='json')), disclosure_hash=manifest.get('disclosure_snapshot',{}).get('sha256'), starting_holdings_hash=manifest.get('starting_holdings_snapshot',{}).get('sha256'), code_revision=code_revision())})
         db.add(row); db.flush()
         db.add(ConfigRow(experiment_id=row.id, payload=row.config)); db.commit()
         return row

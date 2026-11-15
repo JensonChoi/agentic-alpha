@@ -1,5 +1,7 @@
 # House PDF and Pelosi-family validation
 
+**Latest:** [2026 rerun with inferred pre-start holdings](initial-holdings-2026.md): congressional −0.5744%. The cash-start results and screenshot below are preserved history.
+
 ## Updated study — November 15, 2026
 
 **SIMULATION ONLY — FILING-DATE ASSUMPTION.** The inclusive **2026-01-01 through 2026-11-01** study now completes all three strategies. Publication is assumed on filing date, with execution at the next exchange session open. Historical publication remains unverified; the default verified-availability policy still blocks these records.

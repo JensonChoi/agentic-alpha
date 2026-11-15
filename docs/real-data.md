@@ -143,3 +143,9 @@ The `Docker smoke` GitHub Actions workflow runs this command on pushes, pull req
 For the requested study, `strategy_settings.congressional.availability_policy: "filing_date"` (or `--availability-policy filing_date`) assumes publication on filing date and executes at the next eligible session open. It does not alter source availability quality or claim historical posting evidence. Missing filing dates, filing before transaction, and unresolved identities remain ineligible. The default remains `verified`.
 
 Use [pelosi-family-2026-filing-date.json](../configs/examples/pelosi-family-2026-filing-date.json) with the normal benchmark CLI and running worker. This configuration uses snapshot v3, strict price and disclosure-coverage policies, and the original January–November 2026 range. [Updated results and screenshot](house-pdf-validation.md) document the completed assumption study and preserve the earlier blocked run.
+
+## Inferred congressional starting holdings
+
+Set `starting_holdings_snapshot` and `starting_holdings_since` in congressional strategy settings to infer a pre-start candidate set from a separate immutable snapshot. Only records available before the study start qualify under the selected availability policy. Purchases and explicit partial sales imply residual holdings; other sales remove candidates. Unknown residual quantities use equal capped sizing at the first study open, through shared risk checks, fees and slippage. This initialization requires equal sizing and rejects historical quarantines or conflicting records. During-study sales still fully exit. Default configurations retain cash starts.
+
+See the [2026 initial-holdings configuration](../configs/examples/pelosi-family-2026-initial-holdings.json) and [updated results](initial-holdings-2026.md). The report retains the historical snapshot hash, candidate exclusions, source audit, cutoff and sizing policy. No future sale or transaction is used to infer initial holdings.

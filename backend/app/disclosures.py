@@ -115,3 +115,35 @@ def selected_records(c, records: list[dict]) -> tuple[list[dict], list[dict]]:
 def events_for_session(records: list[dict], day, seen: set[str], policy: str = 'verified') -> list[dict]:
     opening = xcals.get_calendar('XNYS').session_open(day)
     return sorted([d for d in records if availability(d, policy) is not None and availability(d, policy) < opening and d['source_id']+':'+d['revision'] not in seen], key=lambda d:(availability(d, policy), d.get('source_order') if d.get('source_order') is not None else 0, d['source_id'], d['revision']))
+
+
+def inferred_holdings(c, records: list[dict]) -> dict:
+    """Infer a candidate set using only pre-start disclosures, never later sales."""
+    from datetime import timedelta
+    if not c.starting_holdings_snapshot:
+        return dict(candidates=[], selected=[], excluded=[], audit=[], processed=[])
+    historical = c.model_copy(update={'start': c.starting_holdings_since, 'end': c.start-timedelta(days=1)})
+    eligible, skipped = selected_records(historical, records)
+    eligible.sort(key=lambda d: (availability(d, c.availability_policy), d.get('source_order') or 0, d['source_id'], d['revision']))
+    active, copied, processed, audit = set(), set(), [], list(skipped)
+    from itertools import groupby
+    for when, group in groupby(eligible, key=lambda d: availability(d, c.availability_policy)):
+        group = list(group)
+        conflicts = {d['ticker'] for d in group if len({x['action'] for x in group if x['ticker']==d['ticker']})>1 and any(x.get('source_order') is None for x in group if x['ticker']==d['ticker'])}
+        for d in group:
+            identity = d.get('amends') or d['source_id']
+            processed.append(d['source_id']+':'+d['revision'])
+            if identity in copied:
+                reason = 'amended: already processed; no replay'
+            elif d['ticker'] in conflicts:
+                active.discard(d['ticker'])
+                reason = 'ambiguous pre-start conflicting disclosures; candidate excluded'
+            else:
+                partial = d['action']=='SELL' and d.get('original', {}).get('sale_description')=='S (partial)'
+                if d['action']=='BUY' or partial: active.add(d['ticker'])
+                else: active.discard(d['ticker'])
+                reason = 'pre-start purchase candidate' if d['action']=='BUY' else ('pre-start partial sale: inferred residual position' if partial else 'pre-start sale full exit')
+            copied.add(identity)
+            audit.append(dict(source_id=d['source_id'], revision=d['revision'], ticker=d['ticker'], action=d['action'], available_at=str(when), reason=reason, source_url=d.get('source_url')))
+    candidates = sorted(active)
+    return dict(candidates=candidates, selected=candidates[:c.max_positions], excluded=candidates[c.max_positions:], audit=audit, processed=processed, copied=sorted(copied), lookback_start=str(c.starting_holdings_since), cutoff_exclusive=str(c.start), policy='Pre-start eligible purchases and explicit partial sales imply residual holdings; other sales remove candidates; unknown residual sizes; alphabetical cap; equal weights capped by position/exposure limits; establish positions at first study open with fees/slippage; no pre-start returns or actual share-count inference')
