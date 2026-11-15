@@ -4,7 +4,7 @@
 
 Implement acquisition and parsing of official congressional transaction-disclosure PDFs, starting with Nancy Pelosi's House disclosures, and benchmark Pelosi-family disclosure-following against VOO buy-and-hold and deterministic momentum. Reuse the existing immutable disclosure snapshots, Yahoo datasets, persisted experiment suites, worker, simulator, reports, and dashboard.
 
-Read `AGENTS.md`, `README.md`, `docs/real-data.md`, `docs/real-data-validation.md`, and the previous prompts before implementing. Inspect the current code rather than assuming the earlier prompts describe its present state. Work on a new branch for this follow-up PR. This prompt supersedes the previous exclusion of House PDF acquisition; it does not reinstate Quiver.
+Read `AGENTS.md`, `README.md`, `docs/real-data.md`, `docs/benchmark-report.md` (consolidated successor to `docs/real-data-validation.md`), and the previous prompts before implementing. Inspect the current code rather than assuming the earlier prompts describe its present state. Work on a new branch for this follow-up PR. This prompt supersedes the previous exclusion of House PDF acquisition; it does not reinstate Quiver.
 
 Deliver code, deterministic tests, documentation, and a reproducible three-strategy benchmark when source evidence permits. All trading remains simulated. Never add brokerage execution, subscriptions, or real-money modes.
 

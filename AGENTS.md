@@ -25,7 +25,7 @@ For local development, run from `backend/`:
 - `uv run uvicorn app.main:app --reload --port 8000` — start the API.
 - `uv run python -m app.worker` — process experiments in a separate terminal.
 - `uv run pytest -q` — run backend tests.
-- `uv run python -m app.cli benchmark --output ../docs/benchmark-demo.md` — regenerate the synthetic benchmark report.
+- `uv run python -m app.cli benchmark --output ../reports/benchmark-demo.md` — regenerate the synthetic benchmark report.
 
 From `frontend/`, run `npm ci`, then `npm run dev`. Use `npm run build` for TypeScript checking and production compilation.
 
