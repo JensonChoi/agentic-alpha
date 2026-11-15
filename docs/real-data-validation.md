@@ -1,4 +1,6 @@
-# Validation record — November 14, 2026
+# Historical baseline validation — November 14, 2026
+
+Superseded for the three-strategy request by [House PDF validation](house-pdf-validation.md). This page preserves the earlier two-leg runs and historical screenshot; its congressional deferral describes that earlier work.
 
 All results are simulations. No provider data or credentials are checked into Git.
 

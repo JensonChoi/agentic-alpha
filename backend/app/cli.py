@@ -20,6 +20,14 @@ def parser():
     download=sub.add_parser('download'); download.add_argument('--provider',choices=['yahoo'],default='yahoo'); download.add_argument('--id',required=True); download.add_argument('--symbols',required=True); download.add_argument('--start',type=date.fromisoformat,required=True); download.add_argument('--end',type=date.fromisoformat,required=True); download.add_argument('--long-window',type=int,default=50)
     local=sub.add_parser('import-disclosures'); local.add_argument('file'); local.add_argument('--id',required=True); local.add_argument('--provenance',required=True)
     disclosure=sub.add_parser('download-disclosures'); disclosure.add_argument('--provider',choices=['quiver'],default='quiver'); disclosure.add_argument('--id',required=True); disclosure.add_argument('--member-id',default='P000197')
+    for command in ('download-house', 'import-house'):
+        house=sub.add_parser(command)
+        if command=='import-house': house.add_argument('file',help='Local JSON bundle of official index/PDF paths and URLs')
+        house.add_argument('--id',required=True); house.add_argument('--member-id',default='P000197')
+        house.add_argument('--start',type=date.fromisoformat,required=True); house.add_argument('--end',type=date.fromisoformat,required=True)
+        house.add_argument('--artifact-dir',required=True); house.add_argument('--provenance',required=True)
+        house.add_argument('--timeout',type=float,default=20); house.add_argument('--interval',type=float,default=1)
+    review=sub.add_parser('correct-disclosures'); review.add_argument('file'); review.add_argument('--source',required=True); review.add_argument('--id',required=True); review.add_argument('--provenance',required=True)
     run=sub.add_parser('benchmark'); run.add_argument('--config'); run.add_argument('--suite',help='Report/wait for an existing suite without creating jobs'); run.add_argument('--output',default='reports/benchmark.md'); run.add_argument('--wait',type=float,default=0); run.add_argument('--strategies')
     for name in ('dataset','start','end','universe','rebalance','disclosure_snapshot','member_id','owners','copy_method','missing_price_policy'): run.add_argument('--'+name.replace('_','-'))
     for name in ('short_window','long_window','max_positions'): run.add_argument('--'+name.replace('_','-'),type=int)
@@ -42,6 +50,13 @@ def main(argv=None):
         payload=json.loads(Path(args.file).read_text()); records=payload['records'] if isinstance(payload,dict) else payload
         metadata=payload.get('metadata',{}) if isinstance(payload,dict) else {}
         print(json.dumps(register_snapshot(args.id,records,{**metadata,'provider':'local','provenance':args.provenance,'retrieved_at':pd.Timestamp.now(tz='UTC').isoformat()}),indent=2))
+    elif args.command in ('download-house','import-house'):
+        from .house import ingest, HouseProvider
+        bundle=json.loads(Path(args.file).read_text()) if args.command=='import-house' else None
+        print(json.dumps(ingest(args.id,args.member_id,args.start,args.end,args.artifact_dir,args.provenance,bundle,HouseProvider(args.timeout,args.interval)),indent=2))
+    elif args.command=='correct-disclosures':
+        from .house import correct_snapshot
+        print(json.dumps(correct_snapshot(args.source,args.id,json.loads(Path(args.file).read_text()),args.provenance),indent=2))
     elif args.command=='download-disclosures':
         records,metadata=QuiverProvider(os.getenv('QUIVER_API_KEY','')).acquire(args.member_id)
         print(json.dumps(register_snapshot(args.id,records,metadata),indent=2))
@@ -52,11 +67,12 @@ def main(argv=None):
             configured_strategies=settings.pop('strategies','buy_and_hold,momentum')
             strategies=args.strategies or configured_strategies
             if isinstance(strategies,str): strategies=strategies.split(',')
+            overrides={}
             for key in Config.model_fields:
                 value=getattr(args,key,None)
-                if value is not None: settings[key]=value.split(',') if key in ('universe','owners') else value
-            if settings.get('dataset','demo')=='demo': seed_demo()
-            identifier=benchmarks.submit(settings,strategies)
+                if value is not None: overrides[key]=value.split(',') if key in ('universe','owners') else value
+            if overrides.get('dataset',settings.get('dataset','demo'))=='demo': seed_demo()
+            identifier=benchmarks.submit(settings,strategies,overrides)
         print('Suite:',identifier,flush=True)
         outstanding=benchmarks.wait(identifier,args.wait); completed=benchmarks.report(identifier,args.output)
         if outstanding: print('Outstanding experiment IDs (jobs remain queued/running):',','.join(outstanding))

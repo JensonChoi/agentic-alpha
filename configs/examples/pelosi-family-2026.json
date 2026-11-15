@@ -1,0 +1,19 @@
+{
+  "strategies": ["buy_and_hold", "momentum", "congressional"],
+  "dataset": "yahoo-house-2026-v1",
+  "start": "2026-01-01",
+  "end": "2026-11-01",
+  "initial_capital": 100000,
+  "max_position_weight": 0.2,
+  "max_positions": 5,
+  "max_exposure": 1,
+  "fee": 0,
+  "slippage_bps": 5,
+  "reinvest_dividends": false,
+  "missing_price_policy": "fail",
+  "strategy_settings": {
+    "buy_and_hold": {"universe": ["VOO"]},
+    "momentum": {"universe": ["VOO", "QQQ", "NVDA", "TSLA", "AAPL"], "short_window": 20, "long_window": 50, "rebalance": "weekly"},
+    "congressional": {"universe": ["VOO"], "disclosure_snapshot": "house-pelosi-2026-v2", "member_id": "P000197", "owners": ["self", "spouse", "dependent", "joint", "unknown"], "copy_method": "equal"}
+  }
+}

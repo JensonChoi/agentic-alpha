@@ -122,8 +122,10 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
                     disclosure_audit.append(dict(source_id=d['source_id'], reason='unmatched price history')); continue
                 if d['action']=='BUY': active.add(d['ticker']); sells.discard(d['ticker'])
                 else: active.discard(d['ticker']); sells.add(d['ticker'])
-                disclosure_audit.append(dict(source_id=d['source_id'], owner=d['owner'], reason='eligible', date=stamp))
+                disclosure_audit.append(dict(source_id=d['source_id'], owner=d['owner'], reason='eligible', date=stamp, source_url=d.get('source_url'), original=d.get('original'), revision=d['revision']))
             selected = sorted(active)[:c.max_positions]
+            if candidates:
+                disclosure_audit.extend(dict(ticker=t, date=stamp, reason='excluded by position cap; alphabetical candidate selection') for t in sorted(active)[c.max_positions:])
             sells.update(t for t,q in ledger.positions.items() if q>0 and t not in selected)
             if candidates:
                 weight = min(cap,c.max_exposure/max(1,len(selected)))
@@ -227,12 +229,16 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
     result['metrics'].update(realized_pnl=float(ledger.realized), trade_win_rate=sum(p>0 for p in ledger.profits)/len(ledger.profits) if ledger.profits else None, average_holding_days=sum(ledger.holding_days)/len(ledger.holding_days) if ledger.holding_days else None)
     result['disclosure_audit']=disclosure_audit
     result['disclosure_counts']={key:sum(key in d['reason'] for d in disclosure_audit) for key in ('eligible','unsupported','unverified','ambiguous','amended','unmatched')}
+    result['disclosure_counts'].update(manifest.get('disclosure_snapshot', {}).get('counts', {}))
+    result['disclosure_counts']['cap_excluded_events']=sum('excluded by position cap' in d['reason'] for d in disclosure_audit)
     result['disclosure_counts']['filled_trades']=len(ledger.fills)
     result['disclosure_counts']['skipped']=sum(d['reason']!='eligible' for d in disclosure_audit)
     result['metrics']['slippage_cost']=sum(f.get('slippage_cost',0) for f in ledger.fills)
     if normalized and not any(d['reason']=='eligible' for d in disclosure_audit):
         result['failures']+=1
         result['metrics']['total_return']=None
+    if normalized and manifest.get('disclosure_snapshot', {}).get('provider') == 'house' and (manifest['disclosure_snapshot'].get('quarantines') or any(d['availability_quality']=='unverified' for d in manifest.get('disclosures', []))):
+        result['failures'] += 1
     result['warnings']=manifest.get('warnings',[]) + manifest.get('disclosure_snapshot',{}).get('warnings',[]) + ['Dividend cash is credited on ex-date, not payment date']
     if c.missing_price_policy=='skip':
         required = {d['ticker'] for d in records} if normalized else ({'VOO'} if c.strategy=='buy_and_hold' else set(c.universe))

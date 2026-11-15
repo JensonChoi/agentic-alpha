@@ -60,7 +60,7 @@ def register_snapshot(identifier: str, records: list[dict], metadata: dict) -> d
     normalized.sort(key=lambda d:(d['source_id'], d['revision']))
     publication_dates=[str(availability(d)) for d in normalized if availability(d) is not None]
     coverage=dict(transaction_start=min((d['transaction_date'] for d in normalized),default=None),transaction_end=max((d['transaction_date'] for d in normalized),default=None),verified_publication_start=min(publication_dates,default=None),verified_publication_end=max(publication_dates,default=None))
-    manifest = dict(schema_version=1, **metadata, count=len(normalized), records_sha256=digest(normalized), members=sorted({d['member_id'] for d in normalized}), owners=sorted({d['owner'] for d in normalized}), availability={q:sum(d['availability_quality']==q for d in normalized) for q in ('verified_timestamp','verified_date','unverified')})
+    manifest = dict(**{**metadata, "schema_version": 2 if metadata.get("artifacts") else 1}, count=len(normalized), records_sha256=digest(normalized), members=sorted({d['member_id'] for d in normalized}), owners=sorted({d['owner'] for d in normalized}), availability={q:sum(d['availability_quality']==q for d in normalized) for q in ('verified_timestamp','verified_date','unverified')})
     manifest['observed_coverage'] = coverage
     manifest['sha256'] = digest(manifest)
     with data.Session() as db:
@@ -76,6 +76,12 @@ def load_snapshot(identifier: str) -> tuple[list[dict], dict]:
         records, manifest = row.records, dict(row.manifest)
     expected = manifest.pop('sha256')
     if digest(manifest) != expected or digest(records) != manifest['records_sha256']: raise ValueError('Disclosure checksum mismatch')
+    for artifact in manifest.get('artifacts', []):
+        from pathlib import Path
+        from hashlib import sha256
+        path = Path(artifact['path'])
+        if not path.is_file() or path.stat().st_size != artifact['bytes'] or sha256(path.read_bytes()).hexdigest() != artifact['sha256']:
+            raise ValueError('Disclosure artifact checksum mismatch: ' + str(path))
     manifest['sha256'] = expected
     return records, manifest
 
