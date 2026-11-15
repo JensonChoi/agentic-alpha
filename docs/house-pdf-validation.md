@@ -27,7 +27,7 @@ Persisted suite: `d982acfe-822c-4d50-a3ab-abeb69165e74`. Experiments: VOO `ded2e
 
 Validation: **88 backend tests passed**, frontend production build passed, and Docker/PostgreSQL synthetic ingestion, three-strategy execution, reporting, and restart verification passed. Regression fixtures cover split rows, conflicting/orphaned continuations, exact and malformed amounts, and assumed timing without changing source verification. No migration or ledger arithmetic change.
 
-Native Chrome inspection confirmed the three completed results and filing-date notice. Green is VOO, blue momentum, and gold congressional. The earlier screenshot below remains historical.
+Native Chrome inspection confirmed the three completed results and filing-date notice. Green is VOO, blue momentum, and gold congressional. The earlier blocked run remains documented below.
 
 ![2026 comparison under the filing-date assumption](images/house-filing-date-2026.png)
 
@@ -84,6 +84,4 @@ Comparison route (use the local research dashboard at port 5173, API proxy port 
 
 `/compare?suite=6cd05d38-4398-4600-a4b0-dfac39d66f4c&experiment=2f2050b6-8382-44df-8046-9968a11bf05b&experiment=0cdb5e09-9e99-46d8-b546-6ac399c38273`
 
-Native Chrome inspection verified both completed results, the current dataset labels, and the blocked congressional member with source-quality details. A new screenshot was captured successfully; browser chrome was excluded. Green is VOO and blue is momentum; no congressional return curve is fabricated. The older screenshot in the [historical validation record](real-data-validation.md) remains explicitly historical.
-
-![New three-leg suite: two completed curves and blocked congressional outcome](images/house-comparison-2026.png)
+Native Chrome inspection verified both completed results, the current dataset labels, and the blocked congressional member with source-quality details. The superseded screenshot of this blocked run has been removed. The current comparison screenshot appears above. The older screenshot in the [historical validation record](real-data-validation.md) remains explicitly historical.
