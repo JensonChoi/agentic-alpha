@@ -64,3 +64,44 @@ def test_initial_conflicts_fail_closed():
     m['starting_holdings']=inferred_holdings(c,[row('b'),row('s',action='SELL')])
     assert m['starting_holdings']['selected']==[]
     with pytest.raises(ValueError,match='ambiguous'):validate(c,f,m)
+
+
+async def test_reserve_candidate_missing_prices_fail_or_report_partial():
+    import pandas as pd
+    c=config()
+    f,m=fixture()
+    tickers=['AAPL','B','C','D','E','Z']
+    f=pd.concat([f]+[f[f.ticker=='AAPL'].assign(ticker=t) for t in tickers[1:-1]],ignore_index=True)
+    m['symbols']=sorted(f.ticker.unique())
+    m['starting_holdings']=inferred_holdings(c,[row(t,t) for t in tickers])
+    assert m['starting_holdings']['excluded']==['Z']
+    m['disclosures']=[row('exit',action='SELL',filing='2024-04-05')]
+    with pytest.raises(ValueError,match='Missing price histories: Z'):validate(c,f,m)
+    permissive=c.model_copy(update={'missing_price_policy':'skip'})
+    validate(permissive,f,m)
+    result=await simulate(permissive,f,m)
+    assert result['failures']>0 and result['missing_sessions']['Z']>0
+    assert any(o['signal']['ticker']=='Z' and o['status']=='unfilled' for o in result['orders'])
+    m['symbols'].append('Z')
+    with pytest.raises(ValueError,match='Z: missing'):validate(c,f,m)
+
+
+@pytest.mark.parametrize('description,expected',[('S (partial)',['AAPL']),('S (full)',[])])
+def test_repeated_corrections_preserve_sale_semantics(tmp_path,monkeypatch,description,expected):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app import data
+    from app.db import Base
+    from app.disclosures import register_snapshot,load_snapshot
+    from app.house import correct_snapshot
+    engine=create_engine('sqlite:///'+str(tmp_path/'corrections.db'))
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(data,'Session',sessionmaker(engine,expire_on_commit=False))
+    records=[row('buy'),row('sell',action='SELL',filing='2024-03-02',original={'sale_description':description})]
+    register_snapshot('original',records,{'provenance':'Synthetic'})
+    source='original'
+    for target in ('review1','review2'):
+        correct_snapshot(source,target,[dict(source_id='sell',reviewer='Synthetic reviewer',evidence='Synthetic owner confirmation',changes={'owner':'spouse'})],'Synthetic review')
+        corrected,_=load_snapshot(target)
+        assert inferred_holdings(config(),corrected)['selected']==expected
+        source=target

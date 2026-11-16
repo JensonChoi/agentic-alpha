@@ -266,7 +266,7 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
     if normalized and manifest.get('disclosure_snapshot', {}).get('quarantines'):
         result['warnings'].append('Partial disclosure coverage: quarantined rows/pages excluded; see snapshot diagnostics')
     if c.missing_price_policy=='skip':
-        required = ({d['ticker'] for d in records} | set(initial.get('selected', []))) if normalized else ({'VOO'} if c.strategy=='buy_and_hold' else set(c.universe))
+        required = ({d['ticker'] for d in records} | set(initial.get('candidates', initial.get('selected', [])))) if normalized else ({'VOO'} if c.strategy=='buy_and_hold' else set(c.universe))
         missing = {ticker:len(sessions(c.start,c.end).difference(pd.DatetimeIndex(frame[frame.ticker==ticker].date))) for ticker in required}
         result['missing_sessions']={ticker:count for ticker,count in missing.items() if count}
         if result['missing_sessions']:

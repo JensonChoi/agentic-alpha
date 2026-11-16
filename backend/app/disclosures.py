@@ -117,6 +117,16 @@ def events_for_session(records: list[dict], day, seen: set[str], policy: str = '
     return sorted([d for d in records if availability(d, policy) is not None and availability(d, policy) < opening and d['source_id']+':'+d['revision'] not in seen], key=lambda d:(availability(d, policy), d.get('source_order') if d.get('source_order') is not None else 0, d['source_id'], d['revision']))
 
 
+def source_sale_description(record: dict) -> str | None:
+    """Read preserved extraction metadata through any correction history."""
+    original = record.get('original', {})
+    while isinstance(original, dict):
+        if 'sale_description' in original:
+            return original['sale_description']
+        original = original.get('extraction')
+    return None
+
+
 def inferred_holdings(c, records: list[dict]) -> dict:
     """Infer a candidate set using only pre-start disclosures, never later sales."""
     from datetime import timedelta
@@ -139,7 +149,7 @@ def inferred_holdings(c, records: list[dict]) -> dict:
                 active.discard(d['ticker'])
                 reason = 'ambiguous pre-start conflicting disclosures; candidate excluded'
             else:
-                partial = d['action']=='SELL' and d.get('original', {}).get('sale_description')=='S (partial)'
+                partial = d['action']=='SELL' and source_sale_description(d)=='S (partial)'
                 if d['action']=='BUY' or partial: active.add(d['ticker'])
                 else: active.discard(d['ticker'])
                 reason = 'pre-start purchase candidate' if d['action']=='BUY' else ('pre-start partial sale: inferred residual position' if partial else 'pre-start sale full exit')

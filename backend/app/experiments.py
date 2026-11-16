@@ -37,7 +37,7 @@ def validate(config, frame, manifest):
         if config.availability_policy=='verified' and quality_initial.get('availability', {}).get('unverified', 0): raise ValueError('Starting holdings blocked: unverified historical availability')
         if quality_initial.get('quarantines'): raise ValueError('Starting holdings blocked: unresolved historical quarantines')
         if any('ambiguous' in d['reason'] for d in initial.get('audit', [])): raise ValueError('Starting holdings blocked: ambiguous historical disclosures')
-        required = {d['ticker'] for d in records} | set(initial.get('selected', [])) | {'VOO'}
+        required = {d['ticker'] for d in records} | set(initial.get('candidates', initial.get('selected', []))) | {'VOO'}
     missing = required - set(manifest['symbols'])
     if missing and config.missing_price_policy == 'fail': raise ValueError('Missing price histories: '+','.join(sorted(missing)))
     if config.mode == 'historical':
