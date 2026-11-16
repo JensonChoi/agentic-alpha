@@ -2,13 +2,13 @@
 
 ## 2026 comparison: 3.5% cash interest
 
-Annual rate 3.5%, actual calendar days/365, credited before each session on the preceding cash balance. Accrual starts January 1 and ends at the final simulated close, October 30; no post-close weekend interest is included. Credited interest compounds at session boundaries. Other strategy settings match the inferred-holdings study below.
+Annual rate 3.5%, actual calendar days/365, credited before each session on the preceding cash balance. Accrual starts January 1 and ends at the final simulated close, October 30; no post-close weekend interest is included. Credited interest compounds at session boundaries. The period is 2026-01-01 through 2026-11-01. Each strategy starts with $100,000, zero fees and 5 bps slippage. Congressional uses the inferred starting holdings described below; momentum uses 20/50-session averages and weekly rebalance. Publication is assumed on filing date and remains historically unverified.
 
-| Strategy | Return | Final equity | Cash interest |
-|---|---:|---:|---:|
-| buy_and_hold | 11.0384% | $111,038.44 | $20.50 |
-| momentum | 1.0045% | $101,004.47 | $1,068.39 |
-| congressional | 0.7847% | $100,784.67 | $1,360.97 |
+| Strategy | Return | Final equity | Cash interest | Average exposure | Fills |
+|---|---:|---:|---:|---:|---:|
+| buy_and_hold | 11.0384% | $111,038.44 | $20.50 | 99.6510% | 1 |
+| momentum | 1.0045% | $101,004.47 | $1,068.39 | 63.4314% | 145 |
+| congressional | 0.7847% | $100,784.67 | $1,360.97 | 51.4785% | 12 |
 
 Suite: `08a166e1-b452-45ff-82c1-07d7fa9b1524`. [Configuration](../configs/examples/pelosi-family-2026-interest.json). Full persisted report: `reports/pelosi-family-2026-interest.md`. All three runs reproduced exactly offline. Validation: 93 existing tests plus the new calendar-day interest/restart test passed.
 
@@ -33,20 +33,6 @@ The earlier blocked suite `a02f0499-d393-467d-b3ee-31cda7711e2d` and original sn
 - buy_and_hold: `e513c5a6-462a-4c52-8c1c-96bc7b91fe79`
 - momentum: `2ea4b6a1-25f7-4f4d-a710-3a6230432a43`
 - congressional: `c0e20137-bd3a-4bba-a937-2fbe2315bd2e`
-
-## Previous 2026 comparison: zero cash interest
-
-**Simulation only. Publication assumed on filing date; historical availability remains unverified.**
-
-**Previous validated run: inferred starting holdings with zero cash interest.** Earlier cash-start and blocked runs appear in [run history](#run-history). Acquisition and CLI instructions live in the separate [workflow guide](real-data.md).
-
-Period: **2026-01-01 through 2026-11-01**, inclusive. All three strategies completed through the existing worker. Each starts with $100,000; fees are zero, slippage is 5 bps, and cash dividends use the existing ex-date approximation. Actual exchange sessions run January 2–October 30. VOO targets 100%; active strategies allow 20% per position, five positions and 100% total exposure. Momentum uses 20/50-session averages and weekly rebalance. Congressional follows Pelosi `P000197`, all owner categories, with event-driven capped equal targets.
-
-| Strategy | Return | Final equity | Average exposure | Maximum drawdown | Fills |
-|---|---:|---:|---:|---:|---:|
-| buy_and_hold | 11.0169% | $111,016.89 | 99.6538% | -8.8945% | 1 |
-| momentum | -0.1290% | $99,871.00 | 63.4590% | -8.6616% | 146 |
-| congressional | -0.5744% | $99,425.56 | 51.6544% | -16.0621% | 12 |
 
 ## Starting portfolio assumption
 
