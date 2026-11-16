@@ -51,11 +51,11 @@ uv run python -m app.cli import prices.csv --id research-v1 --provenance 'Source
 
 CSV/Parquet columns: `date,ticker,open,high,low,close,volume`. Prices must be **raw**, not dividend-adjusted. Use a new dataset ID for each immutable version. Optional `--disclosures disclosures.json` and `--actions actions.json` import JSON arrays. The API also accepts `POST /api/datasets/import`; see its OpenAPI schema.
 
-Legacy dataset-embedded disclosure records contain `id`, `person`, `ticker`, `action` (BUY/SELL), `transaction_date`, `disclosure_date`, optional `published_at`, `security_type` (stock/etf), `value_low`, `value_high`, and `provenance`. These legacy records remain usable for synthetic demos. Real copying requires a separate snapshot with verified publication evidence; see [the normalized schema](docs/real-data.md#congressional-acquisition-and-verified-local-fallback). Options are never converted to shares. An `amends` identifier groups repeated disclosures; previously processed identities are not traded twice.
+Legacy dataset-embedded disclosure records contain `id`, `person`, `ticker`, `action` (BUY/SELL), `transaction_date`, `disclosure_date`, optional `published_at`, `security_type` (stock/etf), `value_low`, `value_high`, and `provenance`. These legacy records remain usable for synthetic demos. Real copying requires a separate snapshot with verified publication evidence; see [the normalized schema](docs/real-data.md#normalized-local-imports). Options are never converted to shares. An `amends` identifier groups repeated disclosures; previously processed identities are not traded twice.
 
 Corporate actions contain `date,ticker,type` and either `ratio` for a split or per-share `amount` for a dividend. Dates must correspond to the supplied raw-price accounting convention. Dividend entitlement uses pre-opening holdings; cash credits use an explicit ex-date approximation. Optional reinvestment uses an available opening price with configured costs and risk checks. Do not submit adjusted prices alongside distributions.
 
-Yahoo acquisition and an authenticated Quiver snapshot adapter are available; see the [real-data workflow](docs/real-data.md). Provider subscriptions, licensing and redistribution rights remain the operator's responsibility. Imports do not resolve survivorship bias, symbol changes, delistings, or source errors automatically. Missing execution prices never get forward-filled; stale last observations may mark existing holdings and should be considered when interpreting results.
+Yahoo acquisition and official House PTR download/local import with deterministic PDF parsing are available; see the [real-data workflow](docs/real-data.md). Provider subscriptions, licensing and redistribution rights remain the operator's responsibility. Imports do not resolve survivorship bias, symbol changes, delistings, or source errors automatically. Missing execution prices never get forward-filled; stale last observations may mark existing holdings and should be considered when interpreting results.
 
 ## Forward simulations
 
@@ -87,7 +87,7 @@ cd ../frontend
 npm run build
 ```
 
-Run the worker separately before waiting for a report. The checked-in `docs/benchmark-demo.md` is a legacy synthetic example; new reports derive from persisted experiments and go in ignored `reports/`. API integration tests exercise create → queue → execute → inspect, authentication, and configuration validation.
+Run the worker separately before waiting for a report. Synthetic benchmark reports derive from persisted experiments and go in ignored `reports/`; they are smoke-test outputs, not historical performance evidence. API integration tests exercise create → queue → execute → inspect, authentication, and configuration validation.
 
 The optional OpenClaw skill and setup instructions are in `integrations/openclaw/`. OpenClaw is not a runtime dependency.
 
@@ -95,7 +95,7 @@ The optional OpenClaw skill and setup instructions are in `integrations/openclaw
 
 Compose binds published ports to loopback. Configure API_TOKEN and a TLS reverse proxy before nonlocal access. The dashboard's API client reads a token from session storage when supplied by an operator; there is no multi-user login UI. Inference endpoints are configured by the operator on the backend, never from agent output. Secrets stay on the backend.
 
-This implementation includes the primary local research flows but is not the entire production-quality specification. Outstanding capabilities include additional licensed market-data sources, source-verified Quiver transaction/publication identities, richer historical news/fundamental tools, token-budget enforcement, detailed cloud pricing, configurable risk-free rates, advanced comparison date controls, and automated browser testing. PostgreSQL/Docker and real inference require separate environment verification. Treat import provenance and corporate-action consistency as operator responsibilities.
+This implementation includes the primary local research flows but is not the entire production-quality specification. Outstanding capabilities include additional licensed market-data sources, verified historical House publication evidence and broader PDF layouts, richer historical news/fundamental tools, token-budget enforcement, detailed cloud pricing, configurable risk-free rates, advanced comparison date controls, and automated browser testing. PostgreSQL/Docker and real inference require separate environment verification. Treat import provenance and corporate-action consistency as operator responsibilities.
 
 ## License
 
@@ -112,5 +112,7 @@ Anyone who uses the software's outputs for investment decisions or adapts it for
 The software is provided without warranty under the MIT License. To the fullest extent permitted by applicable law, the authors and copyright holders disclaim liability for trading losses, lost profits, or other damages arising from use of the software or its outputs, including modified versions and real-money adaptations. This notice supplements the project's documentation and does not modify the MIT License or exclude liability that cannot lawfully be excluded.
 
 ## Real-data baselines and family disclosures
+
+The [benchmark report](docs/benchmark-report.md) is the single reference for current 2026 results, assumptions, source validation and prior runs. All three strategies complete under the filing-date publication assumption: VOO +11.0384%, momentum +1.0045%, and congressional +0.7847% with inferred pre-start holdings and 3.5% annual cash interest. Default verified timing remains blocked by missing publication evidence. No synthetic disclosures replace real records.
 
 See [the complete acquisition, benchmark and offline reproduction workflow](docs/real-data.md). The `benchmark` command now queues persisted experiments through the existing worker; it no longer runs a separate simulator. Default strategies are VOO and momentum. Explicit congressional requests without usable verified records remain blocked in the persisted suite. [Baseline configuration](configs/examples/real-baselines.json) and [three-strategy family configuration](configs/examples/pelosi-family.json) provide examples. All execution remains simulated.

@@ -16,7 +16,7 @@ uv run python -m app.cli benchmark --config ../configs/examples/real-baselines.j
 uv run python -m app.cli benchmark --suite SUITE_ID --wait 120 --output ../reports/real-baselines.md
 ```
 
-Overrides take precedence over JSON settings, then `Config` defaults. Without settings, the demo dataset and April–December 2024 range remain the defaults; real studies should specify their range. Strategies default to `buy_and_hold,momentum`. `benchmark --help` lists allocation, execution, date, universe, owner, window, and dividend overrides. `--no-reinvest-dividends` overrides a true JSON setting. Wait defaults to zero; incomplete/blocked/partial suites exit 2, completed suites exit 0. A timeout leaves jobs intact and prints outstanding IDs. The command never launches a worker. An explicitly requested but unavailable congressional leg remains blocked in the suite and report.
+CLI overrides take precedence over `strategy_settings[STRATEGY]`, then shared JSON settings, then `Config` defaults. The passive VOO policy always retains its 100% position/exposure budget. Without settings, the demo dataset and April–December 2024 range remain the defaults; real studies should specify their range. Strategies default to `buy_and_hold,momentum`. `benchmark --help` lists allocation, execution, date, universe, owner, window, and dividend overrides. `--no-reinvest-dividends` overrides a true JSON setting. Wait defaults to zero; incomplete/blocked/partial suites exit 2, completed suites exit 0. A timeout leaves jobs intact and prints outstanding IDs. The command never launches a worker. An explicitly requested but unavailable congressional leg remains blocked in the suite and report.
 
 Download dates are inclusive. Acquisition retrieves 51 preceding sessions for a 50-session long window. User boundaries may be holidays/weekends; preflight checks actual sessions. Incomplete sessions are excluded. Interior gaps remain explicit in per-symbol coverage; strict preflight rejects missing required bars. `--missing-price-policy skip` is an explicit partial-coverage research policy. Execution prices are never forward-filled; existing holdings may be marked at their last price. Warmup makes no trades or dividend credits.
 
@@ -36,15 +36,64 @@ Splits adjust shares, prior marks and exact FIFO lots. Indicators rescale histor
 
 VOO returns are ledger returns. Adjusted-close returns can differ due to opening entry, fees, slippage, cash dividends, and reinvestment timing; they are not required to match different conventions.
 
-## Congressional benchmarking — deferred
+## House PDF acquisition and review
 
-Quiver is no longer part of the research workflow. No Quiver account, subscription, or API key is required. Congressional acquisition and benchmark validation are deferred to a later PR; the current validated workflow uses Yahoo prices for VOO buy-and-hold and momentum. See [the 2026 validation record](real-data-validation.md) for results and the comparison screenshot.
+House PTR acquisition is available for the evidenced Nancy Pelosi / `P000197` mapping. Quiver, OCR, Senate sources, LLM extraction, and brokerage execution are outside this workflow. [House source semantics and validation](benchmark-report.md) document the inspected official formats and remaining limitations.
 
-The existing disclosure import and simulation interfaces remain available, but they do not establish a validated real congressional dataset. The Quiver adapter remains in the code for now; it is not used by this workflow. The three-strategy example configuration is prospective, not a completed validation example.
+```sh
+uv run python -m app.cli download-house --id house-pelosi-2026-v2 \
+  --member-id P000197 --start 2026-01-01 --end 2026-11-01 \
+  --artifact-dir ../house-artifacts --provenance 'Official House; local noncommercial research'
+uv run python -m app.cli download --id yahoo-house-2026-v1 \
+  --symbols VOO,QQQ,NVDA,TSLA,AAPL,AMZN,BE,DIS,INTC,PYPL \
+  --start 2026-01-01 --end 2026-11-01 --long-window 50
+uv run python -m app.cli benchmark --config ../configs/examples/pelosi-family-2026.json \
+  --wait 30 --output ../reports/pelosi-family-2026-v2.md
+```
 
-### Requirements for a future local disclosure import
+Use fresh IDs on subsequent acquisitions. The example records the validated IDs, not a promise those IDs exist on a new installation. The price union above includes explicitly parsed stock purchases/sales, even when availability remains unverified. Quarantined securities are unresolved; therefore this is not a claim of exhaustive required price coverage. Momentum stays restricted to VOO, QQQ, NVDA, TSLA, AAPL. Congressional selection is event-driven: active purchase candidates are sorted alphabetically, the first five receive capped equal targets, and excluded candidates are audited on each event. Eligible sales fully exit, including source partial sales. Cash remains unallocated when caps prevent full investment.
 
-A future congressional benchmark can use an authorized, source-verified normalized local export. It must retain stable transaction identities, member/owner scope, amendment history, and evidence of public availability. Filing dates alone do not establish publication timing. Automated PDF extraction and verification are not implemented.
+Acquisition reads every current member PTR in each requested calendar-year index, including post-end filings for audit. Date scope does not filter on transaction or filing dates as a substitute for publication dates. Index observations cannot prove historical completeness, prior revisions, or availability. All extracted records start unverified. Unrecognized layouts, scanned pages, uncertain fields and amendment links are quarantined. Strict congressional preflight blocks unresolved House quarantines/publication evidence; explicit `--missing-price-policy skip` allows only a labeled partial run when at least one usable event exists. No usable events always block. The independent `--disclosure-coverage-policy skip_quarantined` can explicitly permit partial disclosure coverage while retaining strict missing-price checks.
+
+The parser uses header geometry, wrapped descriptions, separate note rows and recognized note continuations after repeated headers. It preserves original text, column strings, page/table/row/bounding-box locators, PDF hash and parser version. Source tickers are used only when explicit; no company-name inference or modern-symbol substitutions occur. Options, exercises, gifts/contributions, exchanges, mergers and private assets cannot become ordinary stock trades. A malformed amount remains quarantined even for an unsupported exchange. Complementary adjacent-page transaction fragments can join when column geometry and owner/action/date/amount fields match strictly; both source fragments remain in provenance. Exact dollar amounts retain equal bounds and an explicit amount kind. Conflicting or orphaned fragments and general handwritten forms require review.
+
+Bounds: 20 MiB per source, ten index years, 500 PDFs, 100 pages per PDF, three transient-request attempts, 1–60 second request timeout, 0.1–10 second inter-request interval (defaults 20/1), bounded `Retry-After`, 45 seconds per parser subprocess and 30 CPU seconds. Linux subprocesses also limit address space to 2 GiB; macOS does not support that limit reliably. ZIP contents are read in memory with path/duplicate/expansion checks; XML entity expansion is disabled. Redirects, access denial and CAPTCHAs are not bypassed.
+
+An acquisition reserves a new artifact directory before staging. Missing indexes/documents, network errors or identifier collisions never register a snapshot. Failed directories and discovery journals remain for inspection; choose a new ID to retry. Source URLs, retrieval observations, index rows, PDFs, extraction JSON and the review export are preserved. Parser quarantines can register only with explicit partial/unknown quality. Version-2 manifests hash every registered artifact and the normalized records; `load_snapshot` checks both offline. Keep the database and artifacts together at their recorded absolute paths (or restore the same mount in a container). Legacy snapshots remain readable without retroactive certification. No database migration or ledger-accounting change is needed.
+
+### Offline official-PDF import
+
+`import-house bundle.json` takes the same ID, member, dates, artifact-directory and provenance flags. The bundle lists local source paths (resolved from the command's working directory), official source URLs and index years:
+
+```json
+{
+  "indexes": [{"path": "/local/2026FD.zip", "year": 2026,
+    "source_url": "https://disclosures-clerk.house.gov/public_disc/financial-pdfs/2026FD.zip"}],
+  "documents": [{"path": "/local/20033725.pdf", "year": 2026, "document_id": "20033725",
+    "source_url": "https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/2026/20033725.pdf"}]
+}
+```
+
+The example is illustrative: supply **every** selected member PTR in the provided index, not just the first PDF. Local imports still label discovery partial; operator-supplied files do not establish exhaustive historical coverage. Byte identity changes for an already observed document quarantine its rows instead of trusting reordered row positions. Repeated identical source documents preserve identities, while economically identical rows in different source locations remain distinct.
+
+### Evidence-backed corrections
+
+Inspect `house-artifacts/SNAPSHOT/review.json` and each extraction JSON against the original PDF. Run `correct-disclosures corrections.json --source OLD --id NEW --provenance 'Review scope and limitations'`. The corrections file is an array:
+
+```json
+[{
+  "source_id": "house:DOCUMENT:p1:t1:r1",
+  "reviewer": "Named reviewer",
+  "evidence": "Source URL, page, field and reason for correction",
+  "changes": {"owner": "spouse"}
+}]
+```
+
+Corrections cannot replace the source locator or original extraction. A corrected quarantine needs a complete valid normalized record in `changes`; unknown document/page-level quarantines require a new import, not guessed rows. Every corrected record embeds its previous version, parent snapshot, reviewer and evidence. Amendments additionally require `amends` naming a known root transaction and `amendment_evidence`; ambiguous mappings remain excluded. The existing simulator applies amendments prospectively without replaying copied identities.
+
+Availability corrections require `publication_basis: "documented_publication"`, source semantics/evidence in `publication_evidence`, and either timezone-aware `published_at` or `published_date`. This is an auditable reviewer assertion, not automatic certification. Filing, signature, notification, PDF metadata, HTTP Last-Modified and present retrieval do not establish historical publication. `synthetic_fixture` is reserved for visibly synthetic automated tests; it is never used for the real benchmark.
+
+### Normalized local imports
 
 Once suitable records are available, the existing import interface accepts:
 
@@ -85,6 +134,18 @@ Dashboard creation, history, details and comparison expose provider/coverage/pri
 
 ## Synthetic Docker CI smoke test
 
-Run `bash scripts/docker-smoke.sh` from the repository root with Docker Compose 2.24 or newer. It builds the backend and frontend, starts PostgreSQL 16 and the normal migration/API/worker services in a unique disposable project, and publishes no host ports. It verifies fresh and legacy migrations, API queueing, worker-completed synthetic VOO/momentum benchmarks, persisted reports, and unchanged results after restarting the API and worker. Provider and inference credentials are disabled; only image/dependency installation needs external network access.
+Run `bash scripts/docker-smoke.sh` from the repository root with Docker Compose 2.24 or newer. It builds the backend and frontend, starts PostgreSQL 16 and the normal migration/API/worker services in a unique disposable project, and publishes no host ports. It verifies fresh and legacy migrations, API queueing, synthetic PDF/index ingestion and evidence review, worker-completed VOO/momentum/congressional benchmarks, persisted reports, artifact integrity and offline financial reproduction after restarting the API and worker. Provider and inference credentials are disabled; only image/dependency installation needs external network access.
 
 The `Docker smoke` GitHub Actions workflow runs this command on pushes, pull requests, and manual dispatch with a 15-minute job timeout. Logs and the benchmark report are retained as workflow artifacts and locally under ignored `reports/docker-smoke/`. The script removes its own containers and volumes on exit, leaving existing stacks untouched. This is CI validation, not deployment or a real-data performance benchmark.
+
+## Filing-date assumption study
+
+For the requested study, `strategy_settings.congressional.availability_policy: "filing_date"` (or `--availability-policy filing_date`) assumes publication on filing date and executes at the next eligible session open. It does not alter source availability quality or claim historical posting evidence. Missing filing dates, filing before transaction, and unresolved identities remain ineligible. The default remains `verified`.
+
+Use [pelosi-family-2026-filing-date.json](../configs/examples/pelosi-family-2026-filing-date.json) with the normal benchmark CLI and running worker. This configuration uses snapshot v3, strict price and disclosure-coverage policies, and the original January–November 2026 range. [Cash-start results and historical screenshot](benchmark-report.md) document the completed assumption study and preserve the earlier blocked run.
+
+## Inferred congressional starting holdings
+
+Set `starting_holdings_snapshot` and `starting_holdings_since` in congressional strategy settings to infer a pre-start candidate set from a separate immutable snapshot. Only records available before the study start qualify under the selected availability policy. Purchases and explicit partial sales imply residual holdings; other sales remove candidates. Unknown residual quantities use equal capped sizing at the first study open, through shared risk checks, fees and slippage. This initialization requires equal sizing and rejects historical quarantines or conflicting records. During-study sales still fully exit. Default configurations retain cash starts.
+
+See the [2026 initial-holdings configuration](../configs/examples/pelosi-family-2026-initial-holdings.json) and [updated results](benchmark-report.md). The report retains the historical snapshot hash, candidate exclusions, source audit, cutoff and sizing policy. No future sale or transaction is used to infer initial holdings.

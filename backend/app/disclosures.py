@@ -60,7 +60,7 @@ def register_snapshot(identifier: str, records: list[dict], metadata: dict) -> d
     normalized.sort(key=lambda d:(d['source_id'], d['revision']))
     publication_dates=[str(availability(d)) for d in normalized if availability(d) is not None]
     coverage=dict(transaction_start=min((d['transaction_date'] for d in normalized),default=None),transaction_end=max((d['transaction_date'] for d in normalized),default=None),verified_publication_start=min(publication_dates,default=None),verified_publication_end=max(publication_dates,default=None))
-    manifest = dict(schema_version=1, **metadata, count=len(normalized), records_sha256=digest(normalized), members=sorted({d['member_id'] for d in normalized}), owners=sorted({d['owner'] for d in normalized}), availability={q:sum(d['availability_quality']==q for d in normalized) for q in ('verified_timestamp','verified_date','unverified')})
+    manifest = dict(**{**metadata, "schema_version": 2 if metadata.get("artifacts") else 1}, count=len(normalized), records_sha256=digest(normalized), members=sorted({d['member_id'] for d in normalized}), owners=sorted({d['owner'] for d in normalized}), availability={q:sum(d['availability_quality']==q for d in normalized) for q in ('verified_timestamp','verified_date','unverified')})
     manifest['observed_coverage'] = coverage
     manifest['sha256'] = digest(manifest)
     with data.Session() as db:
@@ -76,12 +76,22 @@ def load_snapshot(identifier: str) -> tuple[list[dict], dict]:
         records, manifest = row.records, dict(row.manifest)
     expected = manifest.pop('sha256')
     if digest(manifest) != expected or digest(records) != manifest['records_sha256']: raise ValueError('Disclosure checksum mismatch')
+    for artifact in manifest.get('artifacts', []):
+        from pathlib import Path
+        from hashlib import sha256
+        path = Path(artifact['path'])
+        if not path.is_file() or path.stat().st_size != artifact['bytes'] or sha256(path.read_bytes()).hexdigest() != artifact['sha256']:
+            raise ValueError('Disclosure artifact checksum mismatch: ' + str(path))
     manifest['sha256'] = expected
     return records, manifest
 
 
-def availability(d: dict) -> pd.Timestamp | None:
+def availability(d: dict, policy: str = 'verified') -> pd.Timestamp | None:
     if not d.get('identity_verified', True): return None
+    if policy == 'filing_date':
+        filing = d.get('filing_date')
+        if not filing or filing < d['transaction_date']: return None
+        return (pd.Timestamp(filing) + pd.Timedelta(days=1)).tz_localize('America/New_York').tz_convert('UTC') - pd.Timedelta(nanoseconds=1)
     quality = d.get('availability_quality')
     if quality == 'verified_timestamp': return pd.Timestamp(d['published_at']).tz_convert('UTC')
     if quality == 'verified_date': return (pd.Timestamp(d['published_date']) + pd.Timedelta(days=1)).tz_localize('America/New_York').tz_convert('UTC') - pd.Timedelta(nanoseconds=1)
@@ -92,7 +102,7 @@ def selected_records(c, records: list[dict]) -> tuple[list[dict], list[dict]]:
     selected, skipped = [], []
     for d in records:
         reason = None
-        when = availability(d)
+        when = availability(d, c.availability_policy)
         if d['member_id'] != c.member_id or d['owner'] not in c.owners: reason = 'outside member/owner scope'
         elif when is None: reason = 'unverified availability or identity'
         elif not (pd.Timestamp(c.start).tz_localize('America/New_York') <= when < (pd.Timestamp(c.end)+pd.Timedelta(days=1)).tz_localize('America/New_York')): reason = 'outside experiment publication range; starting portfolio is cash'
@@ -102,6 +112,48 @@ def selected_records(c, records: list[dict]) -> tuple[list[dict], list[dict]]:
     return selected, skipped
 
 
-def events_for_session(records: list[dict], day, seen: set[str]) -> list[dict]:
+def events_for_session(records: list[dict], day, seen: set[str], policy: str = 'verified') -> list[dict]:
     opening = xcals.get_calendar('XNYS').session_open(day)
-    return sorted([d for d in records if availability(d) < opening and d['source_id']+':'+d['revision'] not in seen], key=lambda d:(availability(d), d.get('source_order') if d.get('source_order') is not None else 0, d['source_id'], d['revision']))
+    return sorted([d for d in records if availability(d, policy) is not None and availability(d, policy) < opening and d['source_id']+':'+d['revision'] not in seen], key=lambda d:(availability(d, policy), d.get('source_order') if d.get('source_order') is not None else 0, d['source_id'], d['revision']))
+
+
+def source_sale_description(record: dict) -> str | None:
+    """Read preserved extraction metadata through any correction history."""
+    original = record.get('original', {})
+    while isinstance(original, dict):
+        if 'sale_description' in original:
+            return original['sale_description']
+        original = original.get('extraction')
+    return None
+
+
+def inferred_holdings(c, records: list[dict]) -> dict:
+    """Infer a candidate set using only pre-start disclosures, never later sales."""
+    from datetime import timedelta
+    if not c.starting_holdings_snapshot:
+        return dict(candidates=[], selected=[], excluded=[], audit=[], processed=[])
+    historical = c.model_copy(update={'start': c.starting_holdings_since, 'end': c.start-timedelta(days=1)})
+    eligible, skipped = selected_records(historical, records)
+    eligible.sort(key=lambda d: (availability(d, c.availability_policy), d.get('source_order') or 0, d['source_id'], d['revision']))
+    active, copied, processed, audit = set(), set(), [], list(skipped)
+    from itertools import groupby
+    for when, group in groupby(eligible, key=lambda d: availability(d, c.availability_policy)):
+        group = list(group)
+        conflicts = {d['ticker'] for d in group if len({x['action'] for x in group if x['ticker']==d['ticker']})>1 and any(x.get('source_order') is None for x in group if x['ticker']==d['ticker'])}
+        for d in group:
+            identity = d.get('amends') or d['source_id']
+            processed.append(d['source_id']+':'+d['revision'])
+            if identity in copied:
+                reason = 'amended: already processed; no replay'
+            elif d['ticker'] in conflicts:
+                active.discard(d['ticker'])
+                reason = 'ambiguous pre-start conflicting disclosures; candidate excluded'
+            else:
+                partial = d['action']=='SELL' and source_sale_description(d)=='S (partial)'
+                if d['action']=='BUY' or partial: active.add(d['ticker'])
+                else: active.discard(d['ticker'])
+                reason = 'pre-start purchase candidate' if d['action']=='BUY' else ('pre-start partial sale: inferred residual position' if partial else 'pre-start sale full exit')
+            copied.add(identity)
+            audit.append(dict(source_id=d['source_id'], revision=d['revision'], ticker=d['ticker'], action=d['action'], available_at=str(when), reason=reason, source_url=d.get('source_url')))
+    candidates = sorted(active)
+    return dict(candidates=candidates, selected=candidates[:c.max_positions], excluded=candidates[c.max_positions:], audit=audit, processed=processed, copied=sorted(copied), lookback_start=str(c.starting_holdings_since), cutoff_exclusive=str(c.start), policy='Pre-start eligible purchases and explicit partial sales imply residual holdings; other sales remove candidates; unknown residual sizes; alphabetical cap; equal weights capped by position/exposure limits; establish positions at first study open with fees/slippage; no pre-start returns or actual share-count inference')

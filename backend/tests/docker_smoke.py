@@ -84,27 +84,46 @@ def run():
     }).json()
     request('POST', f'/api/experiments/{row["id"]}/run')
     api_result = wait_for(row['id'])
+    from datetime import date
+    from app.house import ingest, correct_snapshot
+    from app.disclosures import load_snapshot
+    from tests.house_fixtures import bundle
+    source = bundle(Path('/data/synthetic-house-input'))
+    ingest('synthetic-house', 'P000197', date(2024,1,1), date(2024,12,31), '/data/house-artifacts', 'SYNTHETIC Docker fixture; not real source evidence', source)
+    records, _ = load_snapshot('synthetic-house')
+    correct_snapshot('synthetic-house', 'synthetic-reviewed', [dict(source_id=records[0]['source_id'], reviewer='Synthetic test author', evidence='SYNTHETIC publication fixture', publication_basis='synthetic_fixture', changes=dict(availability_quality='verified_date', published_date='2024-04-01', publication_evidence='SYNTHETIC test-only publication evidence'))], 'SYNTHETIC Docker fixture')
     subprocess.run([
         sys.executable, '-m', 'app.cli', 'benchmark', '--dataset', 'demo',
-        '--end', '2024-04-12', '--strategies', 'buy_and_hold,momentum',
+        '--end', '2024-04-12', '--strategies', 'buy_and_hold,momentum,congressional', '--disclosure-snapshot', 'synthetic-reviewed',
         '--wait', '120', '--output', '/data/smoke-report.md',
     ], check=True, timeout=150)
     suites = request('GET', '/api/benchmark-suites').json()
-    assert len(suites) == 1 and len(suites[0]['members']) == 2
+    assert len(suites) == 1 and len(suites[0]['members']) == 3
     results = {row['id']: api_result}
     for member in suites[0]['members']:
         results[member['experiment_id']] = wait_for(member['experiment_id'])
     assert 'Outcome: completed' in Path('/data/smoke-report.md').read_text()
     Path('/data/smoke-state.json').write_text(json.dumps({'suites': suites, 'results': results}))
-    print('API queue, worker, persisted two-strategy suite and report passed', flush=True)
+    print('API queue, worker, PDF ingestion, persisted three-strategy suite and report passed', flush=True)
 
 
 def verify():
     ready()
     state = json.loads(Path('/data/smoke-state.json').read_text())
+    from app.disclosures import load_snapshot
+    from app.experiments import inputs
+    from app.engine import simulate
+    from app.contracts import Config
+    import asyncio
+    load_snapshot('synthetic-reviewed')
     assert request('GET', '/api/benchmark-suites').json() == state['suites']
     for identifier, expected in state['results'].items():
         assert wait_for(identifier) == expected
+        config = Config(**request('GET', f'/api/experiments/{identifier}').json()['config'])
+        frame, manifest = inputs(config)
+        repeated = asyncio.run(simulate(config, frame, manifest))
+        assert repeated['metrics'] == expected['metrics']
+        assert repeated['trades'] == expected['trades']
     print('Completed results and suite unchanged after API/worker restart', flush=True)
 
 

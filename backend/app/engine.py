@@ -64,6 +64,13 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
     normalized = c.strategy=='congressional' and bool(c.disclosure_snapshot)
     records, skipped = selected_records(c, manifest.get('disclosures', [])) if normalized else ([], [])
     disclosure_audit.extend(skipped)
+    initial = manifest.get('starting_holdings', {}) if normalized else {}
+    if initial:
+        active = set(initial['candidates'])
+        seen = set(initial.get('processed', []))
+        copied = set(initial.get('copied', []))
+        weight = min(c.max_position_weight, c.max_exposure/max(1,len(initial['selected'])))
+        pending = [Signal(ticker=t, action='BUY', target_weight=weight, rationale='Inferred pre-start holdings: initial allocation') for t in initial['selected']]
     if resume:
         ledger.cash=D(resume.get('state',{}).get('exact_cash',resume['cash'])); ledger.positions={t:D(q) for t,q in resume.get('state',{}).get('exact_positions',resume['positions']).items()}
         ledger.fills=resume['trades']; ledger.ids={f['id'] for f in ledger.fills}
@@ -82,7 +89,13 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
         dates=pd.DatetimeIndex([d for d in dates if calendar.session_close(d)<=pd.Timestamp.now(tz='UTC') and d<=frame.date.max()])
     if resume and curve: dates=dates[dates>pd.Timestamp(curve[-1]['date'])]
     cap=1. if c.strategy=='buy_and_hold' else c.max_position_weight
+    interest_total = D(resume.get("cash_interest", 0)) if resume else D(0)
+    previous_day = pd.Timestamp(curve[-1]["date"]) if curve else pd.Timestamp(c.start)
     for index,day in enumerate(dates):
+        interest = ledger.cash * D(c.cash_interest_rate) * D((day-previous_day).days) / D(365)
+        ledger.cash += interest
+        interest_total += interest
+        previous_day = day
         stamp=str(day.date()); today=frame[frame.date==day]; opens=dict(zip(today.ticker,today.open)); closes=dict(zip(today.ticker,today.close))
         if not len(today):
             decisions.append(dict(date=stamp,status='skipped',reason='No fresh bars; actions still processed'))
@@ -100,7 +113,7 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
                 cash=qty*D(action['amount']); ledger.cash+=cash
                 if c.reinvest_dividends and cash>0: reinvest[ticker] = cash
         if c.strategy=='congressional' and normalized:
-            events = events_for_session(records, day, seen)
+            events = events_for_session(records, day, seen, c.availability_policy)
             candidates = []
             for d in events:
                 seen.add(d['source_id']+':'+d['revision'])
@@ -122,8 +135,10 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
                     disclosure_audit.append(dict(source_id=d['source_id'], reason='unmatched price history')); continue
                 if d['action']=='BUY': active.add(d['ticker']); sells.discard(d['ticker'])
                 else: active.discard(d['ticker']); sells.add(d['ticker'])
-                disclosure_audit.append(dict(source_id=d['source_id'], owner=d['owner'], reason='eligible', date=stamp))
+                disclosure_audit.append(dict(source_id=d['source_id'], owner=d['owner'], reason='eligible', date=stamp, source_url=d.get('source_url'), original=d.get('original'), revision=d['revision']))
             selected = sorted(active)[:c.max_positions]
+            if candidates:
+                disclosure_audit.extend(dict(ticker=t, date=stamp, reason='excluded by position cap; alphabetical candidate selection') for t in sorted(active)[c.max_positions:])
             sells.update(t for t,q in ledger.positions.items() if q>0 and t not in selected)
             if candidates:
                 weight = min(cap,c.max_exposure/max(1,len(selected)))
@@ -218,24 +233,40 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
             decisions.append(dict(date=stamp,signals=[s.model_dump() for s in signals],trace=trace,reason=reason,snapshot=curve[-1]))
         pending=signals
         state=dict(exact_positions={t:str(q) for t,q in ledger.positions.items()},exact_cash=str(ledger.cash),pending=[s.model_dump() for s in pending],prices=prices,bullish=sorted(bullish),seen=sorted(seen),accounting=ledger.accounting_state(),active=sorted(active),copied=sorted(copied),disclosure_audit=disclosure_audit)
-        partial=dict(equity=curve,trades=ledger.fills,orders=orders,decisions=decisions,cash=str(ledger.cash),positions={t:str(q) for t,q in ledger.positions.items()},state=state,failures=failures)
+        partial=dict(cash_interest=str(interest_total),equity=curve,trades=ledger.fills,orders=orders,decisions=decisions,cash=str(ledger.cash),positions={t:str(q) for t,q in ledger.positions.items()},state=state,failures=failures)
         if checkpoint and not checkpoint((index+1)/len(dates),partial): return dict(canceled=True)
     if c.mode=='historical': orders.extend(dict(date=None,signal=s.model_dump(),status='unfilled',reason='No subsequent session in experiment') for s in pending)
     result=dict(state=dict(exact_positions={t:str(q) for t,q in ledger.positions.items()},exact_cash=str(ledger.cash),pending=[s.model_dump() for s in pending],prices=prices,bullish=sorted(bullish),seen=sorted(seen),accounting=ledger.accounting_state(),active=sorted(active),copied=sorted(copied),disclosure_audit=disclosure_audit),equity=curve,trades=ledger.fills,orders=orders,decisions=decisions,metrics=metrics(curve,ledger.fills,c.initial_capital),cash=float(ledger.cash),positions={t:float(q) for t,q in ledger.positions.items()},provenance=manifest,failures=failures)
     from .analytics import trading_metrics
     result['metrics'].update(trading_metrics(ledger.fills,curve,decisions))
     result['metrics'].update(realized_pnl=float(ledger.realized), trade_win_rate=sum(p>0 for p in ledger.profits)/len(ledger.profits) if ledger.profits else None, average_holding_days=sum(ledger.holding_days)/len(ledger.holding_days) if ledger.holding_days else None)
+    result['cash_interest']=str(interest_total)
+    result['metrics']['cash_interest']=float(interest_total)
     result['disclosure_audit']=disclosure_audit
     result['disclosure_counts']={key:sum(key in d['reason'] for d in disclosure_audit) for key in ('eligible','unsupported','unverified','ambiguous','amended','unmatched')}
+    result['disclosure_counts'].update(manifest.get('disclosure_snapshot', {}).get('counts', {}))
+    result['disclosure_counts']['cap_excluded_events']=sum('excluded by position cap' in d['reason'] for d in disclosure_audit)
     result['disclosure_counts']['filled_trades']=len(ledger.fills)
     result['disclosure_counts']['skipped']=sum(d['reason']!='eligible' for d in disclosure_audit)
     result['metrics']['slippage_cost']=sum(f.get('slippage_cost',0) for f in ledger.fills)
-    if normalized and not any(d['reason']=='eligible' for d in disclosure_audit):
+    if normalized and not initial.get('selected') and not any(d['reason']=='eligible' for d in disclosure_audit):
         result['failures']+=1
         result['metrics']['total_return']=None
+    if normalized and manifest.get('disclosure_snapshot', {}).get('provider') == 'house' and (manifest['disclosure_snapshot'].get('quarantines') or (c.availability_policy=='verified' and any(d['availability_quality']=='unverified' for d in manifest.get('disclosures', [])))):
+        result['failures'] += 1
     result['warnings']=manifest.get('warnings',[]) + manifest.get('disclosure_snapshot',{}).get('warnings',[]) + ['Dividend cash is credited on ex-date, not payment date']
+    if initial:
+        result['starting_holdings'] = initial
+        result['warnings'].append(initial['policy'])
+        result['warnings'].extend(manifest.get('starting_holdings_snapshot', {}).get('warnings', []))
+    if normalized and c.availability_policy=='filing_date':
+        result['availability_assumption'] = 'ASSUMED publication on filing date; execution at next exchange session open. Not verified historical availability.'
+        result['warnings'].append(result['availability_assumption'])
+        result['disclosure_counts']['assumed_filing_date_eligible'] = len(records)
+    if normalized and manifest.get('disclosure_snapshot', {}).get('quarantines'):
+        result['warnings'].append('Partial disclosure coverage: quarantined rows/pages excluded; see snapshot diagnostics')
     if c.missing_price_policy=='skip':
-        required = {d['ticker'] for d in records} if normalized else ({'VOO'} if c.strategy=='buy_and_hold' else set(c.universe))
+        required = ({d['ticker'] for d in records} | set(initial.get('candidates', initial.get('selected', [])))) if normalized else ({'VOO'} if c.strategy=='buy_and_hold' else set(c.universe))
         missing = {ticker:len(sessions(c.start,c.end).difference(pd.DatetimeIndex(frame[frame.ticker==ticker].date))) for ticker in required}
         result['missing_sessions']={ticker:count for ticker,count in missing.items() if count}
         if result['missing_sessions']:

@@ -1,6 +1,7 @@
 """Acquisition only: no registration or simulation side effects."""
 from dataclasses import dataclass
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Protocol, Callable, TypeVar
 import time
 import numpy as np
@@ -33,6 +34,9 @@ class MarketProvider(Protocol):
 
 class DisclosureProvider(Protocol):
     def acquire(self, member_id: str) -> tuple[list[dict], dict]: ...
+
+class DisclosureArtifactProvider(Protocol):
+    def acquire(self, member_id: str, start: date, end: date, staging: Path) -> dict: ...
 
 
 def normalize_yahoo(frame: pd.DataFrame, symbol: str, timezone: str) -> tuple[pd.DataFrame, list[dict]]:
