@@ -1,4 +1,4 @@
-# Benchmark report — 2025 and 2026
+# Benchmark report — 2024–2026
 
 ## 2026 comparison: 3.5% cash interest
 
@@ -33,6 +33,26 @@ The earlier blocked suite `a02f0499-d393-467d-b3ee-31cda7711e2d` and original sn
 - buy_and_hold: `e513c5a6-462a-4c52-8c1c-96bc7b91fe79`
 - momentum: `2ea4b6a1-25f7-4f4d-a710-3a6230432a43`
 - congressional: `c0e20137-bd3a-4bba-a937-2fbe2315bd2e`
+
+## 2024 comparison: 3.5% cash interest
+
+Requested period: **2024-01-01 through 2024-12-31**. Same $100,000 initial capital, zero fees, 5 bps adverse slippage and ex-date cash dividends. Overnight cash earns 3.5% annually, actual calendar days/365, credited before each session; January 1–December 31 accrual ends at the final session. VOO targets 100%; momentum uses VOO, QQQ, NVDA, TSLA, AAPL, 20/50-session averages and weekly rebalance. Active limits remain 20% per position, five positions and 100% exposure.
+
+| Strategy | Outcome | Return | Final equity | Cash interest | Average exposure | Fills |
+|---|---|---:|---:|---:|---:|---:|
+| buy_and_hold | Completed | 25.6910% | $125,690.96 | $30.56 | 99.5014% | 1 |
+| momentum | Completed | 44.4283% | $144,428.29 | $1,153.23 | 71.7039% | 201 |
+| congressional | Completed | 35.6471% | $135,647.14 | $10.40 | 99.9802% | 16 |
+
+The revised congressional initialization uses `house-pelosi-pre2024-v4`: 17 PDFs, 48 records, 35 unsupported entries, zero quarantines. Parser v5 recognizes older mixed-case identity/header text and normalizes explicitly printed tickers and asset codes to uppercase while retaining original extraction. Five amended rows from 20020561 were reviewed against the unique corresponding rows in 20020515 using owner, asset, date, action, amount and full description; corrections preserve explicit `amends` links and evidence. These rows are partnership units or option exercises and remain ineligible for ordinary stock trading. Publication remains unverified under the filing-date assumption.
+
+The two-year lookback remains 2022–2023. Initial targets are the first five alphabetical residual candidates at 20% each. The in-period `house-pelosi-2024-v1` snapshot and `yahoo-house-2024-interest-v1` price snapshot remain unchanged.
+
+Suite: `c9371013-8bf0-4a03-8027-b50bb99b132d`. [Configuration](../configs/examples/pelosi-family-2024-interest.json). Full report: `reports/pelosi-family-2024-interest-v2.md`. All three completed worker results reproduced exactly offline for metrics, fills and every equity point. The prior blocked suite `74c86ecc-4b44-469c-a853-592acd280311` remains preserved. Amendment review evidence is retained in the immutable snapshot and local `reports/pre2024-amendment-review.json`.
+
+- buy_and_hold: `313ac87a-d981-43ce-b6e9-c3cbbafd8dda`
+- momentum: `5cbeedb1-b34c-431e-94c9-378166b1e4b4`
+- congressional: `0335aa9a-9f15-400a-852b-176ad0d25781`
 
 ## Starting portfolio assumption
 

@@ -297,3 +297,13 @@ def test_complete_borderless_tail_is_not_silently_lost():
     result=parse_pdf(pdf(complete_tail=True),DOC)
     assert not result['quarantines']
     assert {r['ticker'] for r in result['records']}=={'AAPL','TEST'}
+
+
+def test_legacy_case_normalization_and_amendment_quarantine():
+    raw=pdf([dict(ticker='AAPl')]).replace(b'Name:',b'name:').replace(b'Transaction Type',b'transaction type').replace(b'Owner',b'owner').replace(b'Asset',b'asset')
+    parsed=parse_pdf(raw,DOC)
+    assert not parsed['quarantines']
+    assert parsed['records'][0]['ticker']=='AAPL'
+    amended=parse_pdf(pdf([dict(status='Amended')]),DOC)
+    assert not amended['records']
+    assert 'linkage' in amended['quarantines'][0]['reason']

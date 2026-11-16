@@ -29,7 +29,7 @@ PORTAL = BASE + '/FinancialDisclosure/ViewReport'
 MAPPING = 'https://clerk.house.gov/members/P000197'
 OWNER_EVIDENCE = 'https://ethics.house.gov/wp-content/uploads/2023/12/FINAL-2021-FD-Instructions_1.pdf'
 ASSET_EVIDENCE = 'https://fd.house.gov/reference/asset-type-codes.aspx'
-PARSER = 'house-ptr-layout/4'
+PARSER = 'house-ptr-layout/5'
 MAX_BYTES = 20 * 1024 * 1024
 MAX_PAGES = 100
 MAX_DOCUMENTS = 500
@@ -111,7 +111,7 @@ def _fields(page, table, row) -> tuple[list[str], str]:
     # The asset code terminates the main asset description before full-width notes.
     asset_box = (columns[2][0], bbox[1], columns[2][2], bbox[3])
     words = page.crop(asset_box).extract_words()
-    codes = [w for w in words if re.fullmatch(r'\[[A-Z0-9]{2}\]', w['text'])]
+    codes = [w for w in words if re.fullmatch(r'\[[A-Za-z0-9]{2}\]', w['text'])]
     if len(codes) != 1:
         raise ValueError('Missing/ambiguous asset code or continuation row')
     status_words = [w for w in page.crop(bbox).extract_words() if re.fullmatch(r'F(?:iling|\x00+)', w['text'], re.I)]
@@ -179,7 +179,7 @@ def header_rows(table):
     rows = table.extract()
     if not rows: return 0
     first = [str(v or '').replace('\n', ' ') for v in rows[0]]
-    if first[:5] == ['ID', 'Owner', 'Asset', 'Transaction Type', 'Date']: return 1
+    if [v.casefold() for v in first[:5]] == ['id', 'owner', 'asset', 'transaction type', 'date']: return 1
     if first == ['ID', 'Owner', 'Asset', 'Transaction', 'Date', 'Notification', 'Amount', 'Cap.'] and len(rows)>1:
         second = [str(v or '').replace('\n', ' ') for v in rows[1]]
         if second == ['', '', '', 'Type', '', 'Date', '', 'Gains > $200?']: return 2
@@ -201,7 +201,7 @@ def parse_pdf(raw: bytes, document: dict, max_pages: int = MAX_PAGES) -> dict:
             raise ValueError('PDF page limit')
         texts = [p.extract_text() or '' for p in pdf.pages]
         combined = '\n'.join(texts)
-        if f'Filing ID #{docid}' not in combined or not re.search(r'Name:\s*Hon\. Nancy Pelosi\b', combined):
+        if f'Filing ID #{docid}' not in combined or not re.search(r'Name:\s*Hon\. Nancy Pelosi\b', combined, re.I):
             return dict(records=[], quarantines=[dict(document_id=docid, reason='Unresolved document/member identity or scanned PDF')], pages=texts)
         for number, (page, text) in enumerate(zip(pdf.pages, texts), 1):
             pages.append(dict(page=number, text=text))
@@ -282,13 +282,13 @@ def parse_pdf(raw: bytes, document: dict, max_pages: int = MAX_PAGES) -> dict:
                         _, owner, asset, action, traded, notified, amount, _ = values
                         if owner not in OWNERS:
                             raise ValueError('Unknown owner code')
-                        code = re.search(r'\[([A-Z0-9]{2})\]', asset).group(1)
-                        ticker = re.findall(r'\(([A-Z][A-Z0-9.\-]{0,9})\)', asset)
+                        code = re.search(r'\[([A-Za-z0-9]{2})\]', asset).group(1).upper()
+                        ticker = [v.upper() for v in re.findall(r'\(([A-Za-z][A-Za-z0-9.\-]{0,9})\)', asset)]
                         security = {'ST': 'stock', 'EF': 'etf'}.get(code, 'unsupported')
                         if len(ticker) != 1 and security != 'unsupported':
                             raise ValueError('Missing or ambiguous explicit ticker')
                         low, high, amount_kind = amount_bounds(amount)
-                        if (re.search(r'\bamend\w*\b', combined.split('ID Owner Asset', 1)[0], re.I) or re.search(r'\b(amend\w*|correct\w*)\b', original, re.I)) or ': New' not in original:
+                        if (re.search(r'\bamend\w*\b', re.split(r'ID Owner Asset', combined, maxsplit=1, flags=re.I)[0], re.I) or re.search(r'\b(amend\w*|correct\w*)\b', original, re.I)) or ': New' not in original:
                             raise ValueError('Amendment/status requires evidenced row linkage')
                         normalized_action = {'P': 'BUY', 'S': 'SELL', 'S (partial)': 'SELL', 'S (full)': 'SELL', 'E': 'UNSUPPORTED'}.get(action)
                         if normalized_action is None:
@@ -506,8 +506,8 @@ def correct_snapshot(source: str, target: str, corrections: list[dict], provenan
     metadata = {k: v for k, v in manifest.items() if k not in ('sha256', 'schema_version', 'count', 'records_sha256', 'members', 'owners', 'availability', 'observed_coverage')}
     metadata.update(parent_snapshot=source, parent_sha256=manifest['sha256'], provenance=provenance, corrections=corrections)
     metadata['quarantines'] = [q for q in manifest.get('quarantines', []) if q.get('source_id') not in seen]
-    metadata['counts'] = {**metadata.get('counts', {}), 'quarantines': len(metadata['quarantines']), 'parsed_rows': len(by_id), 'unverified': sum(d['availability_quality']=='unverified' for d in by_id.values())}
-    metadata['quality'] = {**metadata.get('quality', {}), 'verified_availability': 'operator-reviewed; see row evidence'}
+    metadata['counts'] = {**metadata.get('counts', {}), 'quarantines': len(metadata['quarantines']), 'parsed_rows': len(by_id), 'unsupported': sum(d['security_type'] not in ('stock','etf') or d['action']=='UNSUPPORTED' for d in by_id.values()), 'unverified': sum(d['availability_quality']=='unverified' for d in by_id.values())}
+    metadata['quality'] = {**metadata.get('quality', {}), 'verified_availability': 'unverified' if all(d['availability_quality']=='unverified' for d in by_id.values()) else 'operator-reviewed; see row evidence'}
     return register_snapshot(target, list(by_id.values()), metadata)
 
 
