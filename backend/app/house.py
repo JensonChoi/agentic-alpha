@@ -29,7 +29,7 @@ PORTAL = BASE + '/FinancialDisclosure/ViewReport'
 MAPPING = 'https://clerk.house.gov/members/P000197'
 OWNER_EVIDENCE = 'https://ethics.house.gov/wp-content/uploads/2023/12/FINAL-2021-FD-Instructions_1.pdf'
 ASSET_EVIDENCE = 'https://fd.house.gov/reference/asset-type-codes.aspx'
-PARSER = 'house-ptr-layout/3'
+PARSER = 'house-ptr-layout/4'
 MAX_BYTES = 20 * 1024 * 1024
 MAX_PAGES = 100
 MAX_DOCUMENTS = 500
@@ -175,12 +175,24 @@ def _preceding_fragment(pdf, number: int, table, row_no: int, values: list[str])
                     original_text=previous.crop(bbox).extract_text() or '')
     return merged, fragment
 
+def header_rows(table):
+    rows = table.extract()
+    if not rows: return 0
+    first = [str(v or '').replace('\n', ' ') for v in rows[0]]
+    if first[:5] == ['ID', 'Owner', 'Asset', 'Transaction Type', 'Date']: return 1
+    if first == ['ID', 'Owner', 'Asset', 'Transaction', 'Date', 'Notification', 'Amount', 'Cap.'] and len(rows)>1:
+        second = [str(v or '').replace('\n', ' ') for v in rows[1]]
+        if second == ['', '', '', 'Type', '', 'Date', '', 'Gains > $200?']: return 2
+    return 0
+
+
 def parse_pdf(raw: bytes, document: dict, max_pages: int = MAX_PAGES) -> dict:
     if len(raw) > MAX_BYTES or not raw.startswith(b'%PDF-'):
         raise ValueError('Invalid PDF signature or byte limit')
     records, quarantines, pages = [], [], []
     last_locator = None
     coverage = {}
+    consumed_notes = set()
     recognized_pages = set()
     docid = document['document_id']
     doc_hash = checksum(raw)
@@ -199,17 +211,27 @@ def parse_pdf(raw: bytes, document: dict, max_pages: int = MAX_PAGES) -> dict:
             recognized = False
             for table_no, table in enumerate(page.find_tables(), 1):
                 extracted = table.extract()
-                if not extracted or [str(v or '').replace('\n', ' ') for v in extracted[0]][:5] != ['ID', 'Owner', 'Asset', 'Transaction Type', 'Date']:
+                if not header_rows(table):
                     continue
                 recognized = True
                 recognized_pages.add(number)
                 coverage.setdefault(number, []).append(table.bbox)
                 from types import SimpleNamespace
-                body = list(enumerate(table.rows[1:], 1))
+                body = list(enumerate(table.rows[header_rows(table):], header_rows(table)))
+                # Recover one complete borderless final row using established columns.
+                tables_here = page.find_tables()
+                if table.bbox == tables_here[-1].bbox:
+                    tail_words = [w for w in page.extract_words() if w['top'] >= table.bbox[3]]
+                    if tail_words:
+                        tail_box = (table.bbox[0], table.bbox[3], table.bbox[2], max(w['bottom'] for w in tail_words)+1)
+                        tail_text = page.crop(tail_box).extract_text() or ''
+                        if len(re.findall(r'\b\d{2}/\d{2}/\d{4}\b', tail_text))==2 and len(re.findall(r'\[[A-Z0-9]{2}\]',tail_text))==1 and ': New' in tail_text and not re.search(r'I CERTIFY|Digitally Signed:',tail_text):
+                            body.append((len(table.rows), SimpleNamespace(bbox=tail_box)))
                 groups = []
                 for row_no, row in body:
+                    if (number, table_no, row_no) in consumed_notes: continue
                     raw_text = page.crop(row.bbox).extract_text() or ''
-                    cells = extracted[row_no]
+                    cells = extracted[row_no] if row_no < len(extracted) else [None]*8
                     if row_no == 1 and all(not c for c in cells[:7]) and cells[7] == '$200?':
                         continue  # Repeated header split by a page break.
                     if re.match(r'(?:F(?:iling|\x00+) S(?:tatus|\x00+):|D(?:escription|\x00+):)', raw_text, re.I):
@@ -242,6 +264,21 @@ def parse_pdf(raw: bytes, document: dict, max_pages: int = MAX_PAGES) -> dict:
                             evidence['original_text'] = original
                             locator = f"house:{docid}:p{fragment['page']}:t{fragment['table']}:tail"
                             last_locator = locator
+                        # A final transaction may carry its status/notes onto the next page.
+                        if ': New' not in original and row.bbox[3] == table.bbox[3] and number < len(pdf.pages):
+                            next_page = pdf.pages[number]
+                            next_tables = next_page.find_tables()
+                            if next_tables and header_rows(next_tables[0]):
+                                nt = next_tables[0]; ni = header_rows(nt)
+                                aligned = len(nt.rows[0].cells)==8 and all(a and b and abs(a[0]-b[0])<2 and abs(a[2]-b[2])<2 for a,b in zip(table.rows[0].cells,nt.rows[0].cells))
+                                if aligned and len(nt.rows)>ni:
+                                    nr = nt.rows[ni]
+                                    note = next_page.crop(nr.bbox).extract_text() or ''
+                                    if re.match(r'F(?:iling|\x00+) S(?:tatus|\x00+): New', note, re.I) and not re.search(r'\b\d{2}/\d{2}/\d{4}\b',note):
+                                        original += '\n'+note
+                                        evidence['original_text'] = original
+                                        evidence.setdefault('continuations', []).append(dict(page=number+1,table=1,row=ni,bbox=list(nr.bbox),original_text=note))
+                                        consumed_notes.add((number+1,1,ni))
                         _, owner, asset, action, traded, notified, amount, _ = values
                         if owner not in OWNERS:
                             raise ValueError('Unknown owner code')
@@ -262,6 +299,7 @@ def parse_pdf(raw: bytes, document: dict, max_pages: int = MAX_PAGES) -> dict:
                         evidence.update(cells=values, amount_kind=amount_kind, asset_code=code, notification_date=notified, sale_description=action, diagnostics=['Availability unverified; explicit source ticker only; no symbol remapping'])
                         record = Disclosure(source_id=locator, revision=doc_hash, member_id='P000197', owner=OWNERS[owner], ticker=ticker[0] if len(ticker)==1 else '', security_type=security, action=normalized_action, transaction_date=datetime.strptime(traded, '%m/%d/%Y').date(), filing_date=document['filing_date'], source_url=document['source_url'], ingested_at=document.get('ingested_at', document['retrieved_at']), value_low=low, value_high=high, original_value_range=amount, original=evidence)
                         records.append(record.model_dump(mode='json'))
+                        coverage.setdefault(number, []).append(row.bbox)
                         if joined:
                             coverage.setdefault(fragment['page'], []).append(fragment['bbox'])
                     except (ValueError, AttributeError) as exc:

@@ -14,23 +14,25 @@ Suite: `08a166e1-b452-45ff-82c1-07d7fa9b1524`. [Configuration](../configs/exampl
 
 ## 2025 comparison: 3.5% cash interest
 
-Requested range: **2025-01-01 through 2025-12-31**, inclusive. Each strategy starts with $100,000, zero fees, 5 bps adverse slippage and cash dividends under the ex-date approximation. Cash earns 3.5% annually on actual calendar days/365, credited before each session using the preceding cash balance. Accrual runs from January 1 through the final December 31 session; no interest after its close is included. VOO targets 100%; momentum uses VOO, QQQ, NVDA, TSLA, AAPL with 20/50-session averages and weekly rebalance. Active limits are 20% per position, five positions and 100% exposure.
+Period: **2025-01-01 through 2025-12-31**. All three strategies completed with $100,000 initial capital, zero fees, 5 bps slippage, and 3.5% annual interest on overnight cash using actual calendar days/365. Cash dividends use the ex-date approximation. VOO targets 100%; active strategies retain 20% position caps, five positions and maximum 100% exposure. Momentum retains VOO, QQQ, NVDA, TSLA, AAPL, 20/50-session averages and weekly rebalance.
 
-| Strategy | Outcome | Return | Final equity | Cash interest | Average exposure | Fills |
-|---|---|---:|---:|---:|---:|---:|
-| buy_and_hold | Completed | 16.9771% | $116,977.06 | $27.53 | 99.5244% | 1 |
-| momentum | Completed | 13.5382% | $113,538.16 | $1,211.77 | 64.4713% | 176 |
-| congressional | Blocked | Unavailable | Unavailable | Unavailable | Unavailable | — |
+| Strategy | Return | Final equity | Cash interest | Average exposure | Fills |
+|---|---:|---:|---:|---:|---:|
+| buy_and_hold | 16.9771% | $116,977.06 | $27.53 | 99.5244% | 1 |
+| momentum | 13.5382% | $113,538.16 | $1,211.77 | 64.4713% | 176 |
+| congressional | 10.0379% | $110,037.94 | $15.62 | 99.8385% | 11 |
 
-Congressional uses the same filing-date assumption and two-year initialization approach as 2026. Its `house-pelosi-pre2025-v1` history covers 2023–2024: 11 documents, 22 normalized rows, 13 unsupported entries and **two quarantine diagnostics** in document 20022260. The NFLX row on page 1 lacks its status within the recognized row; page 2 contains an unrecognized layout with additional transactions. These diagnostics can affect the starting portfolio, so strict preflight blocks execution. They are not two independent missing trades. No return or zero-return substitute is reported.
+Congressional assumes filing-date publication and infers starting holdings from 2023–2024 disclosures. The recovered candidate set is DIS, GOOGL, MSFT, NFLX, NVDA, PYPL, RBLX, V. The existing alphabetical five-position cap selects **DIS, GOOGL, MSFT, NFLX, NVDA**, initially targeting 20% each. PYPL, RBLX and V remain audited cap exclusions. Actual residual share counts are unknown; explicit partial sales imply a residual candidate, while during-study sales retain full-exit semantics.
 
-The in-period snapshot `house-pelosi-2025-v1` has three PDFs, 12 rows, ten unsupported and zero quarantines; its two otherwise eligible entries are AAPL and NVDA sales. Source publication remains unverified. The price snapshot `yahoo-house-2025-interest-v1` includes VOO, QQQ, NVDA, TSLA, AAPL, GOOGL, MSFT, NFLX and V with 51 preceding warmup sessions. This union covers parsed candidates, not unidentified quarantined transactions.
+Parser `house-ptr-layout/4` recognizes the split two-row header in document 20022260, attaches the opening page-2 status/notes to the final page-1 NFLX transaction, and recovers the complete borderless DIS tail row. Page 2 was visually inspected against the source PDF. Original bytes and both-page locators remain preserved. New immutable history snapshot `house-pelosi-pre2025-v3`: **11 PDFs, 30 rows, 15 unsupported, zero quarantines**. Publication quality remains unverified. The in-period snapshot `house-pelosi-2025-v1` retains 12 rows and zero quarantines.
 
-Suite: `a02f0499-d393-467d-b3ee-31cda7711e2d`. [Configuration](../configs/examples/pelosi-family-2025-interest.json). Full persisted report: `reports/pelosi-family-2025-interest.md`. Both completed legs ran through the normal worker and reproduced exactly offline for metrics, fills and every equity point. The blocked congressional configuration and reason remain saved in the suite.
+Price snapshot `yahoo-house-2025-interest-v2` includes the expanded candidate union and 51 preceding warmup sessions; momentum candidates remain unchanged. Suite: `0c4b71cd-6630-4c60-9af0-385ce4d6df45`. [Configuration](../configs/examples/pelosi-family-2025-interest.json). Full report: `reports/pelosi-family-2025-interest-v2.md`. All three persisted worker results reproduce exactly offline for metrics, fills and equity points.
 
-- buy_and_hold: `54006dac-f506-4b32-b812-2ae1f22a47d8`
-- momentum: `30b9d03d-8b62-43d2-a9b8-b2b673d756b1`
-- congressional: `blocked suite member`
+The earlier blocked suite `a02f0499-d393-467d-b3ee-31cda7711e2d` and original snapshots remain preserved. Its congressional block came from extraction diagnostics that are now resolved; its price-only returns were VOO +16.9771% and momentum +13.5382%.
+
+- buy_and_hold: `e513c5a6-462a-4c52-8c1c-96bc7b91fe79`
+- momentum: `2ea4b6a1-25f7-4f4d-a710-3a6230432a43`
+- congressional: `c0e20137-bd3a-4bba-a937-2fbe2315bd2e`
 
 ## Previous 2026 comparison: zero cash interest
 

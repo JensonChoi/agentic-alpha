@@ -281,3 +281,19 @@ def test_exact_amount_exchange_is_preserved_without_stock_trade(amount,expected)
 def test_malformed_amounts_stay_quarantined(amount):
     result=parse_pdf(pdf([dict(amount_first=amount,amount_last='')]),DOC)
     assert result['quarantines'] and not result['records']
+
+
+def test_split_header_and_next_page_status():
+    result=parse_pdf(pdf(pages=2,split_header=True,delayed_status=True),DOC)
+    assert not result['quarantines']
+    assert len(result['records'])==1
+    row=result['records'][0]
+    assert row['source_id']=='house:900001:p1:t1:r1'
+    assert row['original']['continuations'][0]['page']==2
+    assert 'Filing Status: New' in row['original']['original_text']
+
+
+def test_complete_borderless_tail_is_not_silently_lost():
+    result=parse_pdf(pdf(complete_tail=True),DOC)
+    assert not result['quarantines']
+    assert {r['ticker'] for r in result['records']}=={'AAPL','TEST'}

@@ -4,7 +4,7 @@ from pathlib import Path
 import zipfile
 
 
-def pdf(rows=None, docid='900001', pages=1, scanned=False, split_notes=False, continuation=False, split_transaction=False, conflicting_continuation=False):
+def pdf(rows=None, docid='900001', pages=1, scanned=False, split_notes=False, continuation=False, split_transaction=False, conflicting_continuation=False, split_header=False, delayed_status=False, complete_tail=False):
     rows = rows if rows is not None else [dict(owner='SP', ticker='AAPL', action='P')]
     objects = [b'', b'', b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>']
     page_ids = []
@@ -27,8 +27,19 @@ def pdf(rows=None, docid='900001', pages=1, scanned=False, split_notes=False, co
             ops += [f'20 {header_bottom} m 20 {bottom} l S', f'610 {header_bottom} m 610 {bottom} l S']
             for x, value in zip(xs, ['ID', 'Owner', 'Asset', 'Transaction Type', 'Date', 'Notification Date', 'Amount', 'Cap.']):
                 text(x+2, 685, value)
+            if split_header and page_number:
+                ops.append('20 682 m 610 682 l S')
+                # Replace the header text with two geometrically separate rows.
+                ops = [op for op in ops if not (' 685 Td ' in op)]
+                for x,value in zip(xs,['ID','Owner','Asset','Transaction','Date','Notification','Amount','Cap.']): text(x+2,690,value)
+                for x,value in zip(xs,['','','','Type','','Date','','Gains > $200?']): text(x+2,674,value)
+                ops = [op.replace('/F1 8 Tf','/F1 5 Tf') if 'Gains > $200?' in op else op for op in ops]
             for i, row in enumerate(rows):
                 y = 655 - 60*i
+                if delayed_status and page_number and i==0:
+                    text(82,y,'Filing Status: New')
+                    text(82,y-12,'Description: Sold 1,000 shares.')
+                    continue
                 if split_transaction and page_number and i==0:
                     text(82,y,'Stock (TEST) [ST]')
                     text(492,y,'$100,000')
@@ -47,9 +58,14 @@ def pdf(rows=None, docid='900001', pages=1, scanned=False, split_notes=False, co
                 for x, value in zip(xs, values): text(x+2, y, value)
                 text(82, y-10, (f'({ticker}) ' if ticker else '') + '['+row.get('code','ST')+']')
                 text(492, y-10, row.get('amount_last','$15,000'))
+                if delayed_status and page_number==0 and i==len(rows)-1: continue
                 text(82, y-24, 'Filing Status: '+row.get('status','New'))
                 text(82, y-36, row.get('note','SYNTHETIC row'))
-            if split_transaction and page_number==0:
+            if complete_tail:
+                for x,value in zip(xs,['','SP','Tail company (TEST) [ST]','P','03/01/2024','03/02/2024','$1,001 - $15,000','']): text(x+2,bottom-15,value)
+                text(82,bottom-30,'Filing Status: New')
+                text(82,bottom-42,'Description: Ordinary purchase.')
+            elif split_transaction and page_number==0:
                 for x,value in zip(xs,['','SP','Synthetic split company','P','03/01/2024','03/02/2024','$50,001 -','']): text(x+2,bottom-15,value)
             else:
                 text(30, bottom-15, 'I CERTIFY these statements are true, complete, and correct.')

@@ -4,7 +4,7 @@
     "momentum",
     "congressional"
   ],
-  "dataset": "yahoo-house-2025-interest-v1",
+  "dataset": "yahoo-house-2025-interest-v2",
   "start": "2025-01-01",
   "end": "2025-12-31",
   "initial_capital": 100000,
@@ -49,7 +49,7 @@
       "copy_method": "equal",
       "availability_policy": "filing_date",
       "disclosure_coverage_policy": "fail",
-      "starting_holdings_snapshot": "house-pelosi-pre2025-v1",
+      "starting_holdings_snapshot": "house-pelosi-pre2025-v3",
       "starting_holdings_since": "2023-01-01"
     }
   },
