@@ -1,6 +1,6 @@
-# Benchmark report — 2026
+# Benchmark report — 2025 and 2026
 
-## Current comparison: 3.5% cash interest
+## 2026 comparison: 3.5% cash interest
 
 Annual rate 3.5%, actual calendar days/365, credited before each session on the preceding cash balance. Accrual starts January 1 and ends at the final simulated close, October 30; no post-close weekend interest is included. Credited interest compounds at session boundaries. Other strategy settings match the inferred-holdings study below.
 
@@ -12,7 +12,27 @@ Annual rate 3.5%, actual calendar days/365, credited before each session on the 
 
 Suite: `08a166e1-b452-45ff-82c1-07d7fa9b1524`. [Configuration](../configs/examples/pelosi-family-2026-interest.json). Full persisted report: `reports/pelosi-family-2026-interest.md`. All three runs reproduced exactly offline. Validation: 93 existing tests plus the new calendar-day interest/restart test passed.
 
-## Previous comparison: zero cash interest
+## 2025 comparison: 3.5% cash interest
+
+Requested range: **2025-01-01 through 2025-12-31**, inclusive. Each strategy starts with $100,000, zero fees, 5 bps adverse slippage and cash dividends under the ex-date approximation. Cash earns 3.5% annually on actual calendar days/365, credited before each session using the preceding cash balance. Accrual runs from January 1 through the final December 31 session; no interest after its close is included. VOO targets 100%; momentum uses VOO, QQQ, NVDA, TSLA, AAPL with 20/50-session averages and weekly rebalance. Active limits are 20% per position, five positions and 100% exposure.
+
+| Strategy | Outcome | Return | Final equity | Cash interest | Average exposure | Fills |
+|---|---|---:|---:|---:|---:|---:|
+| buy_and_hold | Completed | 16.9771% | $116,977.06 | $27.53 | 99.5244% | 1 |
+| momentum | Completed | 13.5382% | $113,538.16 | $1,211.77 | 64.4713% | 176 |
+| congressional | Blocked | Unavailable | Unavailable | Unavailable | Unavailable | — |
+
+Congressional uses the same filing-date assumption and two-year initialization approach as 2026. Its `house-pelosi-pre2025-v1` history covers 2023–2024: 11 documents, 22 normalized rows, 13 unsupported entries and **two quarantine diagnostics** in document 20022260. The NFLX row on page 1 lacks its status within the recognized row; page 2 contains an unrecognized layout with additional transactions. These diagnostics can affect the starting portfolio, so strict preflight blocks execution. They are not two independent missing trades. No return or zero-return substitute is reported.
+
+The in-period snapshot `house-pelosi-2025-v1` has three PDFs, 12 rows, ten unsupported and zero quarantines; its two otherwise eligible entries are AAPL and NVDA sales. Source publication remains unverified. The price snapshot `yahoo-house-2025-interest-v1` includes VOO, QQQ, NVDA, TSLA, AAPL, GOOGL, MSFT, NFLX and V with 51 preceding warmup sessions. This union covers parsed candidates, not unidentified quarantined transactions.
+
+Suite: `a02f0499-d393-467d-b3ee-31cda7711e2d`. [Configuration](../configs/examples/pelosi-family-2025-interest.json). Full persisted report: `reports/pelosi-family-2025-interest.md`. Both completed legs ran through the normal worker and reproduced exactly offline for metrics, fills and every equity point. The blocked congressional configuration and reason remain saved in the suite.
+
+- buy_and_hold: `54006dac-f506-4b32-b812-2ae1f22a47d8`
+- momentum: `30b9d03d-8b62-43d2-a9b8-b2b673d756b1`
+- congressional: `blocked suite member`
+
+## Previous 2026 comparison: zero cash interest
 
 **Simulation only. Publication assumed on filing date; historical availability remains unverified.**
 
@@ -61,7 +81,7 @@ Suite: `e7305757-59e8-4e67-8288-3609c2ab5cf1`. Config: [pelosi-family-2026-initi
 
 [Open the updated local comparison](http://127.0.0.1:5173/compare?suite=e7305757-59e8-4e67-8288-3609c2ab5cf1&experiment=65797fbc-61b8-483c-a57b-92edea180268&experiment=40cb76d0-df45-4558-987c-78f70b9665fd&experiment=df91104c-178b-4cef-80f3-a9e9eced161b). The [historical screenshots below](#historical-screenshots) do not show this run.
 
-The benchmark was executed before implementation commit `e6ed9b9`; its implementation hash identifies the execution code. The 2025 benchmark is outside this report; 2024–2025 disclosures are used only as initialization evidence for the current run.
+The benchmark was executed before implementation commit `e6ed9b9`; its implementation hash identifies the execution code. For this 2026 run, 2024–2025 disclosures are initialization evidence; the separate 2025 comparison appears above.
 
 ## Source provenance and parser validation
 
