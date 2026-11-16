@@ -30,6 +30,7 @@ class Config(BaseModel):
     short_window: int = Field(default=20, ge=2)
     long_window: int = Field(default=50, ge=3, le=500)
     rebalance: Literal['daily','weekly','monthly'] = 'weekly'
+    cash_interest_rate: float = Field(default=0, ge=0, le=1)
     fee: float = Field(default=0, ge=0)
     slippage_bps: float = Field(default=5, ge=0, le=1000)
     reinvest_dividends: bool = False

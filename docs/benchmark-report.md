@@ -1,8 +1,22 @@
 # Benchmark report — 2026
 
+## Current comparison: 3.5% cash interest
+
+Annual rate 3.5%, actual calendar days/365, credited before each session on the preceding cash balance. Accrual starts January 1 and ends at the final simulated close, October 30; no post-close weekend interest is included. Credited interest compounds at session boundaries. Other strategy settings match the inferred-holdings study below.
+
+| Strategy | Return | Final equity | Cash interest |
+|---|---:|---:|---:|
+| buy_and_hold | 11.0384% | $111,038.44 | $20.50 |
+| momentum | 1.0045% | $101,004.47 | $1,068.39 |
+| congressional | 0.7847% | $100,784.67 | $1,360.97 |
+
+Suite: `08a166e1-b452-45ff-82c1-07d7fa9b1524`. [Configuration](../configs/examples/pelosi-family-2026-interest.json). Full persisted report: `reports/pelosi-family-2026-interest.md`. All three runs reproduced exactly offline. Validation: 93 existing tests plus the new calendar-day interest/restart test passed.
+
+## Previous comparison: zero cash interest
+
 **Simulation only. Publication assumed on filing date; historical availability remains unverified.**
 
-**Current validated run: inferred starting holdings.** Earlier cash-start and blocked runs appear in [run history](#run-history). Acquisition and CLI instructions live in the separate [workflow guide](real-data.md).
+**Previous validated run: inferred starting holdings with zero cash interest.** Earlier cash-start and blocked runs appear in [run history](#run-history). Acquisition and CLI instructions live in the separate [workflow guide](real-data.md).
 
 Period: **2026-01-01 through 2026-11-01**, inclusive. All three strategies completed through the existing worker. Each starts with $100,000; fees are zero, slippage is 5 bps, and cash dividends use the existing ex-date approximation. Actual exchange sessions run January 2–October 30. VOO targets 100%; active strategies allow 20% per position, five positions and 100% total exposure. Momentum uses 20/50-session averages and weekly rebalance. Congressional follows Pelosi `P000197`, all owner categories, with event-driven capped equal targets.
 
