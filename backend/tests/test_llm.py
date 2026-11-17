@@ -156,3 +156,101 @@ async def test_final_model_override(monkeypatch):
         return Envelope(analyst=dict(role=role,candidates_considered=[],findings=[],missing_inputs=[],concerns=[])),{}
     monkeypatch.setattr('app.inference.call',fake)
     assert (await evaluate(c,ctx))[0]
+
+@pytest.mark.parametrize('case,code,stage', [
+    ('mixed','mixed_tools_and_output','protocol_validation'),
+    ('empty','expected_portfolio_output','protocol_validation'),
+    ('symbol','unauthorized_signal_symbol','semantic_validation'),
+    ('duplicate','duplicate_signal_symbol','semantic_validation'),
+    ('evidence','unknown_evidence_reference','semantic_validation'),
+    ('entry','invalid_entry','semantic_validation'),
+    ('exit','invalid_exit','semantic_validation'),
+    ('rounds','tool_rounds_exhausted','budget'),
+    ('tools','tool_budget_exhausted','budget'),
+])
+async def test_precise_decision_errors(monkeypatch,case,code,stage):
+    c,ctx=setup(); output=final()
+    if case=='mixed': output.tools=[ToolRequest(name='cash')]
+    if case=='empty': output=Envelope()
+    if case=='symbol': output.final.signals[0].ticker='SECRET'
+    if case=='duplicate': output.final.signals.append(output.final.signals[0].model_copy())
+    if case=='evidence': output.final.evidence_refs=['SECRET']
+    if case=='entry': output.final.signals[0].target_weight=0
+    if case=='exit': output.final.signals[0].action='SELL'
+    if case in ('rounds','tools'):
+        output=Envelope(tools=[ToolRequest(name='cash')])
+        if case=='rounds': c.tool_rounds=0
+        else: c.tool_calls=0
+    async def fake(*args): return output,{}
+    monkeypatch.setattr('app.inference.call',fake)
+    signals,trace=await evaluate(c,ctx)
+    assert not signals
+    assert trace[-1]['error_code']==code and trace[-1]['error_stage']==stage
+    assert trace[0]['error_code']==code
+    assert trace[0]['status']=='completed'  # Parsed transport response, not validated output.
+    assert trace[0]['validation_status']=='failed'
+    assert 'SECRET' not in json.dumps(trace)
+
+@pytest.mark.parametrize('payload,code', [
+    ('not JSON SECRET','invalid_model_json'),
+    ('{"final":{"SECRET":"private"}}','output_schema_invalid'),
+])
+async def test_adapter_schema_error_codes_without_input_leak(monkeypatch,payload,code):
+    c,ctx=setup()
+    async def post(self,url,**kwargs):
+        return httpx.Response(200,json={'message':{'content':payload,'thinking':'SECRET'}},request=httpx.Request('POST',url))
+    monkeypatch.setattr(httpx.AsyncClient,'post',post)
+    signals,trace=await evaluate(c,ctx)
+    assert not signals and trace[0]['error_code']==code
+    assert trace[-1]['error_code']==code
+    assert 'SECRET' not in json.dumps(trace) and 'private' not in json.dumps(trace)
+
+async def test_budget_deadline_transport_codes(monkeypatch):
+    c,ctx=setup(max_model_calls=1)
+    async def tool(*args): return Envelope(tools=[ToolRequest(name='cash')]),{}
+    monkeypatch.setattr('app.inference.call',tool)
+    assert (await evaluate(c,ctx))[1][-1]['error_code']=='model_budget_exhausted'
+    async def slow(*args): await asyncio.sleep(1)
+    monkeypatch.setattr('app.inference.call',slow);c.decision_timeout=.01
+    trace=(await evaluate(c,ctx))[1]
+    assert trace[-1]['error_code']=='decision_deadline_exceeded'
+    assert trace[0]['status']=='canceled'
+    assert trace[0]['validation_status']=='failed'
+    async def unavailable(*args): raise httpx.ConnectError('SECRET')
+    monkeypatch.setattr('app.inference.call',unavailable);c.decision_timeout=1
+    trace=(await evaluate(c,ctx))[1]
+    assert trace[0]['error_code']=='provider_unavailable'
+    assert 'SECRET' not in json.dumps(trace)
+
+async def test_analyst_failure_retains_role_error_code(monkeypatch):
+    c,ctx=setup();c.strategy='multi_agent'
+    async def fake(config,role,*args):
+        if role=='risk': return final(),{}
+        return Envelope(analyst=dict(role=role,candidates_considered=[],findings=[],missing_inputs=[],concerns=[])),{}
+    monkeypatch.setattr('app.inference.call',fake)
+    signals,trace=await evaluate(c,ctx)
+    assert not signals and trace[-1]['error_code']=='required_analyst_failed'
+    risk=next(t for t in trace if t['role']=='risk')
+    assert risk['error_code']=='expected_analyst_output'
+    assert risk['validation_status']=='failed'
+
+@pytest.mark.parametrize('failure,code', [
+    ('timeout','call_timeout'),
+    ('http400','unsupported_capability_or_model'),
+    ('http503','provider_http_error'),
+    ('bad_json','invalid_provider_json'),
+    ('bad_shape','invalid_provider_response'),
+])
+async def test_provider_error_classification(monkeypatch,failure,code):
+    c,ctx=setup(retries=0)
+    async def post(self,url,**kwargs):
+        if failure=='timeout': raise httpx.ReadTimeout('SECRET')
+        if failure.startswith('http'):
+            return httpx.Response(int(failure[4:]),text='SECRET',request=httpx.Request('POST',url))
+        if failure=='bad_json': return httpx.Response(200,text='SECRET',request=httpx.Request('POST',url))
+        return httpx.Response(200,json={'thinking':'SECRET'},request=httpx.Request('POST',url))
+    monkeypatch.setattr(httpx.AsyncClient,'post',post)
+    signals,trace=await evaluate(c,ctx)
+    assert not signals
+    assert trace[0]['error_code']==trace[-1]['error_code']==code
+    assert 'SECRET' not in json.dumps(trace)

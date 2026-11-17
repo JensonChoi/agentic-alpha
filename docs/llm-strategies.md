@@ -113,3 +113,29 @@ retain audits even before final persistence into normalized audit tables.
 Historical point-in-time retrieval cannot remove training-data contamination from
 a model. These examples and offline tests establish software behavior, not trading
 performance or empirical superiority.
+
+## Decision error codes
+
+New failures include `error_code` and `error_stage` in the decision audit and
+associated call trace. Existing saved decisions are unchanged and may only have
+an exception name. Codes contain trusted application constants, never model text,
+provider error bodies, credentials, or validation inputs.
+
+| Stage | Codes |
+|---|---|
+| Request | `input_context_limit` |
+| Provider | `provider_unavailable`, `call_timeout`, `provider_http_error`, `unsupported_capability_or_model`, `provider_response_size_limit`, `invalid_provider_json`, `invalid_provider_response` |
+| Schema validation | `invalid_model_json`, `output_schema_invalid` |
+| Protocol validation | `mixed_tools_and_output`, `expected_portfolio_output`, `expected_analyst_output` |
+| Semantic validation | `unknown_evidence_reference`, `unauthorized_signal_symbol`, `duplicate_signal_symbol`, `invalid_entry`, `invalid_exit`, `unknown_analyst_candidate`, `unauthorized_finding_symbol`, `unknown_finding_evidence` |
+| Budget | `model_budget_exhausted`, `tool_budget_exhausted`, `tool_rounds_exhausted` |
+| Orchestration | `required_analyst_failed`, `decision_deadline_exceeded`, `canceled`, `internal_error` |
+
+For a required analyst failure, inspect that role's call trace for its specific
+cause. HTTP failures additionally include the numeric `http_status`.
+`status: completed` on a call denotes a parsed response; `validation_status`
+separately reports `validated`, `tool_request_validated`, or `failed`. Successful
+parsing followed by a protocol/semantic rejection records `validation_status: failed`
+and the precise error code. Unknown errors use `internal_error` without exposing
+exception messages. These diagnostics do not relax validation or alter retry,
+trading, prompt, or tool-budget policies.
