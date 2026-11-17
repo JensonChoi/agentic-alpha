@@ -60,7 +60,8 @@ async def run(id:str):
         if e.status not in ('created','failed','partial'): raise HTTPException(409,'Experiment is already queued or completed')
         if c.strategy in ('single_agent','multi_agent'):
             available=await models(c.provider)
-            if c.model not in available or (c.decision_model and c.decision_model not in available): raise ValueError('Configured model is unavailable')
+            final_available=await models(c.decision_provider) if c.decision_provider and c.decision_provider!=c.provider else available
+            if c.model not in available or ((c.decision_model or c.model) not in final_available): raise ValueError('Configured model is unavailable')
         queue(e); db.commit(); return describe(e)
 @app.post('/api/experiments/{id}/cancel',dependencies=[Depends(auth)])
 def cancel(id:str):
@@ -119,9 +120,10 @@ class ImportRequest(BaseModel):
     bars: list[dict] = Field(min_length=1,max_length=200000)
     disclosures: list[dict] = []
     actions: list[dict] = []
+    agent_evidence: list[dict] = Field(default_factory=list, max_length=10000)
 @app.post('/api/datasets/import',dependencies=[Depends(auth)],status_code=201)
 def import_dataset(request:ImportRequest):
-    return register(request.id,pd.DataFrame(request.bars),request.provenance,request.synthetic,request.disclosures,request.actions)
+    return register(request.id,pd.DataFrame(request.bars),request.provenance,request.synthetic,request.disclosures,request.actions,metadata={"agent_evidence":request.agent_evidence})
 class AdvanceRequest(BaseModel):
     dataset: str
 @app.post('/api/experiments/{id}/advance',dependencies=[Depends(auth)])
@@ -133,6 +135,10 @@ def advance(id:str,request:AdvanceRequest):
         cutoff=old.date.max()
         if not old.reset_index(drop=True).equals(new[new.date<=cutoff].reset_index(drop=True)): raise ValueError('New dataset must preserve every previous bar unchanged')
         if old_manifest['actions']!=[a for a in new_manifest['actions'] if a['date']<=str(cutoff.date())]: raise ValueError('Corporate-action history changed')
+        evidence_cutoff=cutoff.tz_localize('America/New_York')+pd.Timedelta(days=1)
+        def prior_evidence(manifest):
+            return [r for r in manifest.get('agent_evidence',[]) if pd.Timestamp(r['available_at'])<evidence_cutoff]
+        if prior_evidence(old_manifest)!=prior_evidence(new_manifest): raise ValueError('Evidence history changed')
         e.config={**e.config,'dataset':request.dataset}; e.status='queued'; db.commit(); return describe(e)
 
 @app.get('/api/disclosure-snapshots',dependencies=[Depends(auth)])

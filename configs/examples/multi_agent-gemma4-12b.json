@@ -1,0 +1,23 @@
+{
+  "name": "SYNTHETIC multi_agent gemma4:12b",
+  "strategy": "multi_agent",
+  "model": "gemma4:12b",
+  "provider": "ollama",
+  "dataset": "llm-synthetic-v1",
+  "universe": [
+    "VOO",
+    "QQQ",
+    "NVDA",
+    "TSLA",
+    "AAPL"
+  ],
+  "start": "2024-04-01",
+  "end": "2024-04-12",
+  "rebalance": "weekly",
+  "max_model_calls": 12,
+  "analyst_concurrency": 1,
+  "context_tokens": 8192,
+  "output_tokens": 2048,
+  "temperature": 0,
+  "seed": 42
+}

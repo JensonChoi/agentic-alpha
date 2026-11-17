@@ -16,6 +16,8 @@ def parser():
     p=argparse.ArgumentParser(description='Simulation-only immutable data acquisition and persisted benchmarks')
     sub=p.add_subparsers(dest='command',required=True)
     sub.add_parser('demo')
+    experiment=sub.add_parser('experiment'); experiment.add_argument('--config',required=True); experiment.add_argument('--queue',action='store_true')
+    sub.add_parser('llm-demo')
     imp=sub.add_parser('import'); imp.add_argument('file'); imp.add_argument('--id',required=True); imp.add_argument('--provenance',required=True); imp.add_argument('--disclosures'); imp.add_argument('--actions')
     download=sub.add_parser('download'); download.add_argument('--provider',choices=['yahoo'],default='yahoo'); download.add_argument('--id',required=True); download.add_argument('--symbols',required=True); download.add_argument('--start',type=date.fromisoformat,required=True); download.add_argument('--end',type=date.fromisoformat,required=True); download.add_argument('--long-window',type=int,default=50)
     local=sub.add_parser('import-disclosures'); local.add_argument('file'); local.add_argument('--id',required=True); local.add_argument('--provenance',required=True)
@@ -39,7 +41,14 @@ def parser():
 def main(argv=None):
     args=parser().parse_args(argv)
     if engine.dialect.name=='sqlite': Base.metadata.create_all(engine)
-    if args.command=='demo': seed_demo()
+    if args.command=='experiment':
+        from .experiments import create_experiment
+        row=create_experiment(Config(**json.loads(Path(args.config).read_text())),queued=args.queue)
+        print(row.id)
+    elif args.command=='llm-demo':
+        from .llm_demo import seed_llm_demo
+        seed_llm_demo()
+    elif args.command=='demo': seed_demo()
     elif args.command=='import':
         frame=pd.read_parquet(args.file) if args.file.endswith('.parquet') else pd.read_csv(args.file)
         register(args.id,frame,args.provenance,False,json.loads(Path(args.disclosures).read_text()) if args.disclosures else [],json.loads(Path(args.actions).read_text()) if args.actions else [])

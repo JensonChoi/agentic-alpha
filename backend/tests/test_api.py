@@ -84,3 +84,36 @@ def test_worker_stops_when_canceled_experiment_deleted(client, monkeypatch):
     monkeypatch.setattr(worker, 'simulate', interrupted)
     worker.execute(experiment_id)
     assert client.get(f'/api/experiments/{experiment_id}').status_code == 404
+
+def test_llm_audit_persistence(client, monkeypatch):
+    from app.inference import Envelope
+    from app.db import ToolCallRow, RecommendationRow
+    from sqlalchemy import select
+    from test_engine import fixture
+    frame,_=fixture()
+    data.register('llm-fixture',frame,'Synthetic rising-price integration fixture',True)
+    calls={}
+    async def fake(config,role,context,*args):
+        key=context['snapshot']['cutoff']; calls[key]=calls.get(key,0)+1
+        if calls[key]==1:
+            return Envelope(tools=[{'name':'cash'}]), {'usage':{'input_tokens':20,'output_tokens':10}}
+        return Envelope(final=dict(signals=[],synthesis='No trade with missing evidence',agreement='',disagreement='',evidence_refs=['snapshot'])), {'usage':{'input_tokens':20,'output_tokens':10}}
+    async def models(*args): return ['mock']
+    monkeypatch.setattr('app.inference.call',fake)
+    monkeypatch.setattr('app.main.models',models)
+    response=client.post('/api/experiments',json=dict(strategy='single_agent',dataset='llm-fixture',model='mock',universe=['VOO','AAPL'],start='2024-04-01',end='2024-04-05',rebalance='daily'))
+    assert response.status_code==201
+    identifier=response.json()['id']
+    assert client.post(f'/api/experiments/{identifier}/run').status_code==200
+    worker.execute(identifier)
+    exported=client.get(f'/api/experiments/{identifier}/export').json()
+    assert exported['experiment']['status']=='completed'
+    assert exported['results']['decisions']
+    with main.Session() as db:
+        assert db.scalar(select(ToolCallRow).where(ToolCallRow.experiment_id==identifier))
+        assert db.scalar(select(RecommendationRow).where(RecommendationRow.experiment_id==identifier))
+
+
+def test_evidence_import_rejects_bad_availability(client):
+    payload=dict(id='bad-evidence',provenance='Synthetic fixture',synthetic=True,bars=[dict(date='2024-04-01',ticker='VOO',open=100,high=101,low=99,close=100,volume=10)],agent_evidence=[dict(id='news',ticker='VOO',kind='news',published_at='2024-04-01T12:00:00Z',available_at='2024-03-01T12:00:00Z',provenance='fixture')])
+    assert client.post('/api/datasets/import',json=payload).status_code==422

@@ -79,7 +79,10 @@ def persist_result(db,e,result):
     for kind,model in [('equity',SnapshotRow),('orders',OrderRow),('trades',FillRow),('decisions',DecisionRow)]:
         for i,payload in enumerate(result[kind]): db.merge(model(id=f'{e.id}:{i}',experiment_id=e.id,payload=payload))
     for i,decision in enumerate(result['decisions']):
-        for j,trace in enumerate(decision.get('trace',[])): db.merge(RecommendationRow(id=f'{e.id}:{i}:{j}',experiment_id=e.id,payload=trace))
+        for j,trace in enumerate(decision.get('trace',[])):
+            db.merge(RecommendationRow(id=f'{e.id}:{i}:{j}',experiment_id=e.id,payload=trace))
+            for k,tool in enumerate(trace.get('tools',[])):
+                db.merge(ToolCallRow(id=f'{e.id}:{i}:{j}:{k}',experiment_id=e.id,payload=tool))
     db.merge(MetricRow(id=e.id,experiment_id=e.id,payload=result['metrics']))
 
 class DisclosureSnapshot(Base):

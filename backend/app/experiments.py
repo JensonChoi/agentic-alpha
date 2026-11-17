@@ -22,6 +22,9 @@ def inputs(config):
 
 
 def validate(config, frame, manifest):
+    if config.strategy in ("single_agent", "multi_agent"):
+        from .inference import preflight
+        preflight(config)
     dates = sessions(config.start, config.end)
     if not len(dates): raise ValueError('No trading sessions in requested range')
     required = set(['VOO'] if config.strategy=='buy_and_hold' else config.universe) | {'VOO'}
