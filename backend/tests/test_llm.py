@@ -163,7 +163,8 @@ async def test_final_model_override(monkeypatch):
     ('symbol','unauthorized_signal_symbol','semantic_validation'),
     ('duplicate','duplicate_signal_symbol','semantic_validation'),
     ('evidence','unknown_evidence_reference','semantic_validation'),
-    ('entry','invalid_entry','semantic_validation'),
+    ('entry','nonpositive_buy_weight','semantic_validation'),
+    ('ineligible_entry','ineligible_buy_symbol','semantic_validation'),
     ('exit','invalid_exit','semantic_validation'),
     ('rounds','tool_rounds_exhausted','budget'),
     ('tools','tool_budget_exhausted','budget'),
@@ -175,6 +176,9 @@ async def test_precise_decision_errors(monkeypatch,case,code,stage):
     if case=='symbol': output.final.signals[0].ticker='SECRET'
     if case=='duplicate': output.final.signals.append(output.final.signals[0].model_copy())
     if case=='evidence': output.final.evidence_refs=['SECRET']
+    if case=='ineligible_entry':
+        ctx['entries'].remove('AAPL')
+        ctx['holdings']['AAPL'] = 1
     if case=='entry': output.final.signals[0].target_weight=0
     if case=='exit': output.final.signals[0].action='SELL'
     if case in ('rounds','tools'):
@@ -254,3 +258,92 @@ async def test_provider_error_classification(monkeypatch,failure,code):
     assert not signals
     assert trace[0]['error_code']==trace[-1]['error_code']==code
     assert 'SECRET' not in json.dumps(trace)
+
+async def test_price_only_limits_tools_and_citations(monkeypatch):
+    c,ctx=setup(price_only=True, tool_calls=1)
+    for name in ('news','fundamentals'):
+        assert dispatch(ToolRequest(name=name,ticker='AAPL'),ctx,c)['status']=='unsupported'
+    schemas=[]
+    async def post(self,url,**kwargs):
+        schema=kwargs['json']['format']
+        schemas.append(schema)
+        if len(schemas)==1:
+            assert set(schema['$defs']['ToolRequest']['properties']['name']['enum'])=={'prices','indicators','cash','positions','rules'}
+            assert schema['anyOf'][1]['properties']['tools']['maxItems']==1
+            content='{"tools":[{"name":"cash"}]}'
+        else:
+            assert schema['required']==['final'] and not schema['additionalProperties']
+            refs=schema['$defs']['PriceOnlyFinalOutput']['properties']['evidence_refs']['items']['enum']
+            assert 'snapshot' in refs and len(refs)==2
+            content=json.dumps({'final':final().final.model_dump()})
+        return httpx.Response(200,json={'message':{'content':content}},request=httpx.Request('POST',url))
+    monkeypatch.setattr(httpx.AsyncClient,'post',post)
+    signals,trace=await evaluate(c,ctx)
+    assert signals and trace[-1]['actual_calls']==2
+
+@pytest.mark.parametrize('holdings,ticker,weight,error', [
+    ({'AAPL': 1}, 'AAPL', {}, None),
+    ({'AAPL': 1}, 'VOO', {}, 'invalid_exit'),
+    ({}, 'AAPL', {}, 'invalid_exit'),
+    ({'AAPL': 1}, 'AAPL', {'target_weight': 0}, 'output_schema_invalid'),
+])
+async def test_price_only_sell_uses_held_ticker_and_implicit_zero(monkeypatch, holdings, ticker, weight, error):
+    c, ctx = setup(price_only=True, tool_calls=0)
+    ctx['holdings'] = holdings
+
+    async def post(self, url, **kwargs):
+        definitions = kwargs['json']['format']['$defs']
+        if holdings:
+            sell = definitions['SellResponse']
+            assert sell['properties']['ticker']['enum'] == sorted(holdings)
+            assert 'target_weight' not in sell['properties']
+            assert not sell['additionalProperties']
+        else:
+            assert 'SellResponse' not in definitions
+        output = final().final.model_dump()
+        output['signals'] = [dict(ticker=ticker, action='SELL', rationale='Exit', **weight)]
+        content = json.dumps({'final': output})
+        return httpx.Response(200, json={'message': {'content': content}}, request=httpx.Request('POST', url))
+
+    monkeypatch.setattr(httpx.AsyncClient, 'post', post)
+    signals, trace = await evaluate(c, ctx)
+    assert trace[-1].get('error_code') == error
+    if error is None:
+        assert [(s.ticker, s.action, s.target_weight) for s in signals] == [('AAPL', 'SELL', 0)]
+    else:
+        assert not signals
+
+@pytest.mark.parametrize('entries,ticker,weight,error', [
+    (['AAPL'], 'AAPL', {'target_weight': .1}, None),
+    (['AAPL'], 'AAPL', {'target_weight': 0}, 'output_schema_invalid'),
+    (['AAPL'], 'AAPL', {}, 'output_schema_invalid'),
+    (['AAPL'], 'VOO', {'target_weight': .1}, 'ineligible_buy_symbol'),
+    ([], 'VOO', {'target_weight': .1}, 'ineligible_buy_symbol'),
+])
+async def test_price_only_buy_requires_eligible_ticker_and_positive_weight(monkeypatch, entries, ticker, weight, error):
+    c, ctx = setup(price_only=True, tool_calls=0)
+    ctx['entries'] = entries
+    ctx['holdings'] = {'VOO': 1}
+
+    async def post(self, url, **kwargs):
+        definitions = kwargs['json']['format']['$defs']
+        if entries:
+            buy = definitions['BuyResponse']
+            assert buy['properties']['ticker']['enum'] == entries
+            assert 'target_weight' in buy['required']
+            assert buy['properties']['target_weight']['exclusiveMinimum'] == 0
+        else:
+            assert 'BuyResponse' not in definitions
+        assert definitions['HoldResponse']['properties']['ticker']['enum'] == sorted(set(entries) | {'VOO'})
+        output = final().final.model_dump()
+        output['signals'] = [dict(ticker=ticker, action='BUY', rationale='Entry', **weight)]
+        content = json.dumps({'final': output})
+        return httpx.Response(200, json={'message': {'content': content}}, request=httpx.Request('POST', url))
+
+    monkeypatch.setattr(httpx.AsyncClient, 'post', post)
+    signals, trace = await evaluate(c, ctx)
+    assert trace[-1].get('error_code') == error
+    if error is None:
+        assert [(s.ticker, s.action, s.target_weight) for s in signals] == [('AAPL', 'BUY', .1)]
+    else:
+        assert not signals

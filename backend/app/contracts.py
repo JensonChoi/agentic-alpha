@@ -63,6 +63,7 @@ class Config(BaseModel):
     tool_rounds: int = Field(default=2, ge=0, le=4)
     tool_calls: int = Field(default=8, ge=0, le=32)
     retries: int = Field(default=1, ge=0, le=2)
+    price_only: bool = False
     max_candidates: int = Field(default=10, ge=1, le=20)
     news_max_age_days: int = Field(default=7, ge=1, le=365)
     fundamentals_max_age_days: int = Field(default=180, ge=1, le=730)

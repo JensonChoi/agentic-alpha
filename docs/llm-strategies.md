@@ -127,7 +127,7 @@ provider error bodies, credentials, or validation inputs.
 | Provider | `provider_unavailable`, `call_timeout`, `provider_http_error`, `unsupported_capability_or_model`, `provider_response_size_limit`, `invalid_provider_json`, `invalid_provider_response` |
 | Schema validation | `invalid_model_json`, `output_schema_invalid` |
 | Protocol validation | `mixed_tools_and_output`, `expected_portfolio_output`, `expected_analyst_output` |
-| Semantic validation | `unknown_evidence_reference`, `unauthorized_signal_symbol`, `duplicate_signal_symbol`, `invalid_entry`, `invalid_exit`, `unknown_analyst_candidate`, `unauthorized_finding_symbol`, `unknown_finding_evidence` |
+| Semantic validation | `unknown_evidence_reference`, `unauthorized_signal_symbol`, `duplicate_signal_symbol`, `ineligible_buy_symbol`, `nonpositive_buy_weight`, `invalid_exit`, `unknown_analyst_candidate`, `unauthorized_finding_symbol`, `unknown_finding_evidence` |
 | Budget | `model_budget_exhausted`, `tool_budget_exhausted`, `tool_rounds_exhausted` |
 | Orchestration | `required_analyst_failed`, `decision_deadline_exceeded`, `canceled`, `internal_error` |
 
@@ -139,3 +139,7 @@ parsing followed by a protocol/semantic rejection records `validation_status: fa
 and the precise error code. Unknown errors use `internal_error` without exposing
 exception messages. These diagnostics do not relax validation or alter retry,
 trading, prompt, or tool-budget policies.
+
+Older audits use `invalid_entry` for both buy checks. New audits use
+`ineligible_buy_symbol` for an allowed symbol outside the entry shortlist and
+`nonpositive_buy_weight` for an eligible buy with zero weight.

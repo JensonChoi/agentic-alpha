@@ -77,6 +77,8 @@ def snapshot(config, history, manifest, portfolio, curve, day):
 def dispatch(request, context, config):
     allowed = set(context['entries'])|set(context['holdings'])
     name = request.name
+    if config.price_only and name in ('fundamentals', 'news'):
+        return dict(status='unsupported', reason='Disabled for price-only experiment', evidence_refs=[])
     if name in ('prices','indicators','news','fundamentals') and request.ticker not in allowed:
         return dict(status='rejected', reason='Symbol not authorized', evidence_refs=[])
     if name in ('positions','cash','rules') and request.ticker is not None:
