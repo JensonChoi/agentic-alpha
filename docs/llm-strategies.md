@@ -51,7 +51,7 @@ portfolio exposure, drawdown and candidate weight limits, not future proposals.
 Sectors are unavailable. Analyst advice cannot override deterministic controls.
 
 Defaults: 12 actual invocations, two tool rounds per role, eight tool requests per
-decision, one transient retry per invocation, 90 seconds per call, 600 seconds per
+decision, one retry per invocation, 90 seconds per call, 600 seconds per
 decision, and one concurrent analyst. Retries and follow-ups consume the shared
 budget; one invocation is reserved for final synthesis. No automatic schema repair.
 Worker cancellation is polled every half second while asynchronous inference runs.
@@ -137,8 +137,15 @@ cause. HTTP failures additionally include the numeric `http_status`.
 separately reports `validated`, `tool_request_validated`, or `failed`. Successful
 parsing followed by a protocol/semantic rejection records `validation_status: failed`
 and the precise error code. Unknown errors use `internal_error` without exposing
-exception messages. These diagnostics do not relax validation or alter retry,
-trading, prompt, or tool-budget policies.
+exception messages. Provider stop reasons and reported token counts are retained
+when model JSON parsing or schema validation fails.
+
+Malformed JSON can be retried once per tool round when the configured retry and
+model call budgets permit it. The retry uses the same response schema unless
+the remaining tool budget requires a final response. If the provider reports a
+length stop, the output token limit doubles up to the configured context limit
+and the supported output ceiling of 8192 tokens. Each attempt has its own audit
+entry. A repeated parse failure rejects the decision.
 
 Older audits use `invalid_entry` for both buy checks. New audits use
 `ineligible_buy_symbol` for an allowed symbol outside the entry shortlist and

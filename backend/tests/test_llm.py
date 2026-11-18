@@ -347,3 +347,37 @@ async def test_price_only_buy_requires_eligible_ticker_and_positive_weight(monke
         assert [(s.ticker, s.action, s.target_weight) for s in signals] == [('AAPL', 'BUY', .1)]
     else:
         assert not signals
+
+@pytest.mark.parametrize('stop_reason,second_limit,recover', [
+    ('length', 4096, True),
+    ('stop', 2048, True),
+    ('SECRET', 2048, False),
+])
+async def test_invalid_json_retry_preserves_safe_metadata(monkeypatch, stop_reason, second_limit, recover):
+    c, ctx = setup(price_only=True, retries=2)
+    limits = []
+
+    async def post(self, url, **kwargs):
+        limit = kwargs['json']['options']['num_predict']
+        limits.append(limit)
+        good = len(limits) == 2 and recover
+        content = final().model_dump_json() if good else '{"partial": "SECRET'
+        return httpx.Response(200, json={
+            'message': {'content': content, 'thinking': 'SECRET'},
+            'done_reason': stop_reason if len(limits) == 1 else 'stop',
+            'prompt_eval_count': 123,
+            'eval_count': limit if not good else 90,
+        }, request=httpx.Request('POST', url))
+
+    monkeypatch.setattr(httpx.AsyncClient, 'post', post)
+    signals, trace = await evaluate(c, ctx)
+    assert limits == [2048, second_limit]
+    assert bool(signals) == recover
+    assert trace[0]['error_code'] == 'invalid_model_json'
+    assert trace[0]['retry_reason'] == 'invalid_model_json'
+    assert trace[0]['stop_reason'] == (stop_reason if stop_reason != 'SECRET' else None)
+    assert trace[0]['usage'] == {'input_tokens': 123, 'output_tokens': 2048}
+    assert trace[1]['effective']['output_tokens'] == second_limit
+    assert trace[-1]['actual_calls'] == 2
+    assert trace[-1]['status'] == ('completed' if recover else 'failed')
+    assert 'SECRET' not in json.dumps(trace)

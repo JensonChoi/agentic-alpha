@@ -12,6 +12,19 @@ Annual rate 3.5%, actual calendar days/365, credited before each session on the 
 
 Suite: `08a166e1-b452-45ff-82c1-07d7fa9b1524`. [Configuration](../configs/examples/pelosi-family-2026-interest.json). Full persisted report: `reports/pelosi-family-2026-interest.md`. All three runs reproduced exactly offline. Validation: 93 existing tests plus the new calendar-day interest/restart test passed.
 
+## 2026 single-agent LLM benchmarks
+
+The single-agent experiments use `yahoo-house-2026-initial-v1` and trade VOO, QQQ, NVDA, TSLA, and AAPL. Weekly decisions run over January 1 through November 1, with October 30 as the last trading session. Each run starts at $100,000 with a 20% cap per position, zero fees, 5 bps slippage, and 3.5% annual cash interest. The dataset contains Yahoo prices and dividend events. Price-only mode disables the news and fundamentals tools.
+
+| Model and configuration | Decisions passed | Fills | Final value | Return | Max drawdown | Experiment ID |
+|---|---:|---:|---:|---:|---:|---|
+| Qwen 3.5 9B, price-only with separate buy, hold, and sell schemas | 42/43 | 31 | $110,908.95 | +10.91% | 9.36% | `d1d0e807-8b01-495f-8ebd-8b2ce37ff3e6` |
+| Gemma 4 12B, price-only with separate buy, hold, and sell schemas | 43/43 | 41 | $107,030.83 | +7.03% | 11.69% | `94425b69-a0bb-4c83-bfcc-1622998d2f6e` |
+
+The full Qwen run was marked partial because one response on April 24 failed JSON parsing. A diagnostic replay passed on its first attempt. The original failure predates logging of the provider stop reason, so its cause remains unknown. The full Qwen run also predates automatic retries for malformed JSON. The local export is under `reports/qwen-2026-action-schema/`.
+
+Gemma completed all 43 weekly decisions in 17.6 minutes. It made 49 model calls with zero recorded errors or retries. The simulator rejected two proposals because they had no executable quantity. Gemma used the same saved strategy and inference settings as the latest Qwen run apart from the model and experiment name. The newer retry code was enabled for Gemma. The local export is under `reports/gemma-2026-action-schema/`.
+
 ## 2025 comparison: 3.5% cash interest
 
 Period: **2025-01-01 through 2025-12-31**. All three strategies completed with $100,000 initial capital, zero fees, 5 bps slippage, and 3.5% annual interest on overnight cash using actual calendar days/365. Cash dividends use the ex-date approximation. VOO targets 100%; active strategies retain 20% position caps, five positions and maximum 100% exposure. Momentum retains VOO, QQQ, NVDA, TSLA, AAPL, 20/50-session averages and weekly rebalance.

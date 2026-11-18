@@ -27,9 +27,10 @@ from .agent_tools import Strict, ToolRequest, dispatch
 
 class DecisionError(ValueError):
     """Trusted diagnostic code; never includes provider or model text."""
-    def __init__(self, code: str, stage: str):
+    def __init__(self, code: str, stage: str, *, metadata: dict | None = None):
         self.code = code
         self.stage = stage
+        self.metadata = metadata or {}
         super().__init__(code)
 
 
@@ -185,21 +186,36 @@ async def call(config, role, context, model=None, provider=None):
         if not isinstance(content, str): raise TypeError()
     except (KeyError, IndexError, TypeError):
         raise DecisionError('invalid_provider_response', 'provider') from None
-    if price_only:
-        wire = PriceOnlyEnvelope.model_validate_json(content)
-        if wire.final is not None:
-            final_data = wire.final.model_dump()
-            for signal in final_data['signals']:
-                if signal['action'] == 'SELL':
-                    signal['target_weight'] = 0
-            parsed = Envelope(tools=wire.tools, analyst=wire.analyst, final=FinalOutput.model_validate(final_data))
+    usage = raw.get('usage') or {}
+    if not isinstance(usage, dict):
+        usage = {}
+
+    def token_count(value):
+        return value if type(value) is int and value >= 0 else None
+
+    choice = {} if provider == 'ollama' else raw['choices'][0]
+    reason = raw.get('done_reason') if provider == 'ollama' else choice.get('finish_reason')
+    metadata = dict(provider=provider, effective=effective, unsupported=unsupported,
+                    usage=dict(input_tokens=token_count(raw.get('prompt_eval_count', usage.get('prompt_tokens'))),
+                               output_tokens=token_count(raw.get('eval_count', usage.get('completion_tokens')))),
+                    stop_reason=reason if reason in ('stop', 'length', 'load', 'unload', 'tool_calls', 'content_filter') else None)
+    try:
+        if price_only:
+            wire = PriceOnlyEnvelope.model_validate_json(content)
+            if wire.final is not None:
+                final_data = wire.final.model_dump()
+                for signal in final_data['signals']:
+                    if signal['action'] == 'SELL':
+                        signal['target_weight'] = 0
+                parsed = Envelope(tools=wire.tools, analyst=wire.analyst, final=FinalOutput.model_validate(final_data))
+            else:
+                parsed = Envelope(tools=wire.tools, analyst=wire.analyst)
         else:
-            parsed = Envelope(tools=wire.tools, analyst=wire.analyst)
-    else:
-        parsed = Envelope.model_validate_json(content)
-    usage=raw.get('usage',{})
-    return parsed, dict(model=raw.get('model',model or config.model), provider=provider, effective=effective, unsupported=unsupported,
-        usage=dict(input_tokens=raw.get('prompt_eval_count',usage.get('prompt_tokens')),output_tokens=raw.get('eval_count',usage.get('completion_tokens'))))
+            parsed = Envelope.model_validate_json(content)
+    except ValidationError as exc:
+        diagnostic = error_details(exc)
+        raise DecisionError(diagnostic['error_code'], diagnostic['error_stage'], metadata=metadata) from None
+    return parsed, dict(model=raw.get('model', model or config.model), **metadata)
 
 async def evaluate(config, context):
     preflight(config)
@@ -217,6 +233,8 @@ async def evaluate(config, context):
             if extra:
                 refs.update(known)
             for round_number in range(config.tool_rounds+1):
+                attempt_config = config
+                retried_json = False
                 for attempt in range(config.retries+1):
                     async with lock:
                         reserve=1 if config.strategy=='multi_agent' and role!='portfolio' else 0
@@ -229,14 +247,28 @@ async def evaluate(config, context):
                     record=dict(role=role,requested_model=(config.decision_model or config.model) if role=='portfolio' else config.model,requested_provider=(config.decision_provider or config.provider) if role=='portfolio' else config.provider,attempt=attempt+1,latency=0,status='attempted',validation_status='pending',usage={},tools=[])
                     trace.append(record); call_start=time.monotonic()
                     try:
-                        output, meta=await call(config,role,payload,config.decision_model or config.model if role=='portfolio' else config.model,config.decision_provider or config.provider if role=='portfolio' else config.provider)
+                        output, meta=await call(attempt_config,role,payload,config.decision_model or config.model if role=='portfolio' else config.model,config.decision_provider or config.provider if role=='portfolio' else config.provider)
                         record.update(meta,status='completed')
                         break
                     except Exception as exc:
-                        record.update(status='failed',validation_status='failed',error=type(exc).__name__,**error_details(exc))
+                        record.update(getattr(exc, 'metadata', {}))
+                        diagnostic = error_details(exc)
+                        record.update(status='failed',validation_status='failed',error=type(exc).__name__,**diagnostic)
                         if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in (400,404,422): record['error']='unsupported_capability_or_model'
                         transient=isinstance(exc,(httpx.TransportError,TimeoutError)) or isinstance(exc,httpx.HTTPStatusError) and (exc.response.status_code==429 or exc.response.status_code>=500)
-                        if not transient or attempt==config.retries: raise
+                        if attempt == config.retries:
+                            raise
+                        if diagnostic['error_code'] == 'invalid_model_json' and not retried_json:
+                            if used >= config.max_model_calls - reserve:
+                                raise
+                            retried_json = True
+                            record['retry_reason'] = 'invalid_model_json'
+                            if record.get('stop_reason') == 'length':
+                                output_limit = min(config.output_tokens * 2, config.context_tokens, 8192)
+                                if output_limit > config.output_tokens:
+                                    attempt_config = config.model_copy(update={'output_tokens': output_limit})
+                        elif not transient:
+                            raise
                     finally: record['latency']=time.monotonic()-call_start
                 if output.tools:
                     if output.analyst or output.final: raise DecisionError('mixed_tools_and_output', 'protocol_validation')
