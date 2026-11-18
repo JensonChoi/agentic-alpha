@@ -116,3 +116,10 @@ The software is provided without warranty under the MIT License. To the fullest 
 The [benchmark report](docs/benchmark-report.md) is the single reference for current 2026 results, assumptions, source validation and prior runs. All three strategies complete under the filing-date publication assumption: VOO +11.0384%, momentum +1.0045%, and congressional +0.7847% with inferred pre-start holdings and 3.5% annual cash interest. Default verified timing remains blocked by missing publication evidence. No synthetic disclosures replace real records.
 
 See [the complete acquisition, benchmark and offline reproduction workflow](docs/real-data.md). The `benchmark` command now queues persisted experiments through the existing worker; it no longer runs a separate simulator. Default strategies are VOO and momentum. Explicit congressional requests without usable verified records remain blocked in the persisted suite. [Baseline configuration](configs/examples/real-baselines.json) and [three-strategy family configuration](configs/examples/pelosi-family.json) provide examples. All execution remains simulated.
+
+### Bounded LLM strategies
+
+See [LLM strategies and local examples](docs/llm-strategies.md) for single-agent
+and four-role analysis, read-only evidence imports/tools, resource budgets,
+provider limitations and audit inspection. The initial LLM universe is VOO, QQQ,
+NVDA, TSLA and AAPL. Example configurations do not launch experiments or benchmarks.

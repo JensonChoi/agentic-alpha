@@ -22,6 +22,9 @@ def inputs(config):
 
 
 def validate(config, frame, manifest):
+    if config.strategy in ("single_agent", "multi_agent"):
+        from .inference import preflight
+        preflight(config)
     dates = sessions(config.start, config.end)
     if not len(dates): raise ValueError('No trading sessions in requested range')
     required = set(['VOO'] if config.strategy=='buy_and_hold' else config.universe) | {'VOO'}
@@ -61,8 +64,15 @@ def create_experiment(config, session_factory=None, queued=False):
         return row
 
 
+def experiment_status(row):
+    # Older workers stored finalized runs with decision failures as partial.
+    if row.status == 'partial' and row.progress >= 1 and 'metrics' in row.result and row.result.get('failures'):
+        return 'completed_with_warnings'
+    return row.status
+
+
 def queue(row):
-    if row.status not in ('created','failed','partial'): raise ValueError('Experiment is already queued or completed')
+    if experiment_status(row) not in ('created','failed','partial'): raise ValueError('Experiment is already queued or completed')
     from .contracts import Config
     frame, manifest = inputs(Config(**row.config))
     validate(Config(**row.config), frame, manifest)

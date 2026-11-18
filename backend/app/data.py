@@ -30,6 +30,9 @@ def register(name, frame, provenance, synthetic=False, disclosures=None, actions
         if a.get('type') not in ('split','dividend'): raise ValueError('Unsupported corporate action')
         if a.get('type')=='split' and a.get('ratio',0)<=0: raise ValueError('Split ratio must be positive')
         if a.get('type')=='dividend' and a.get('amount',-1)<0: raise ValueError('Dividend must be nonnegative')
+    if metadata and 'agent_evidence' in metadata:
+        from .agent_tools import validate_records
+        metadata = {**metadata, 'agent_evidence': validate_records(metadata['agent_evidence'])}
     required = {'date','ticker','open','high','low','close','volume'}
     if not required.issubset(frame.columns): raise ValueError(f'Required columns: {sorted(required)}')
     if frame.empty: raise ValueError('Empty dataset')

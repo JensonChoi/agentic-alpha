@@ -8,6 +8,7 @@ from .disclosures import selected_records, events_for_session
 from .provenance import digest
 from .data import sessions
 from .inference import evaluate
+from .agent_tools import snapshot
 
 def D(x): return Decimal(str(x))
 class Ledger:
@@ -60,7 +61,7 @@ def metrics(curve, fills, capital):
     return dict(initial_value=capital,final_value=float(values[-1]) if len(values) else capital,total_return=total,cagr=cagr,volatility=vol,sharpe=float(np.mean(returns)*252/vol) if vol else None,sortino=float(np.mean(returns)*252/downside) if downside else None,max_drawdown=dd,calmar=cagr/abs(dd) if dd and cagr is not None else None,trade_count=len(fills),transaction_costs=sum(f['fee'] for f in fills),turnover=sum(abs(f['quantity']*f['price']) for f in fills)/capital)
 
 async def simulate(c, frame, manifest, checkpoint=None, resume=None):
-    ledger=Ledger(c.initial_capital); curve=[]; decisions=[]; orders=[]; pending=[]; prices={}; bullish=set(); seen=set(); failures=0; active=set(); copied=set(); disclosure_audit=[]
+    ledger=Ledger(c.initial_capital); curve=[]; decisions=[]; orders=[]; pending=[]; prices={}; bullish=set(); seen=set(); failures=0; active=set(); copied=set(); disclosure_audit=[]; pending_decision_id=None
     normalized = c.strategy=='congressional' and bool(c.disclosure_snapshot)
     records, skipped = selected_records(c, manifest.get('disclosures', [])) if normalized else ([], [])
     disclosure_audit.extend(skipped)
@@ -72,10 +73,12 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
         weight = min(c.max_position_weight, c.max_exposure/max(1,len(initial['selected'])))
         pending = [Signal(ticker=t, action='BUY', target_weight=weight, rationale='Inferred pre-start holdings: initial allocation') for t in initial['selected']]
     if resume:
+        from copy import deepcopy
+        resume=deepcopy(resume)
         ledger.cash=D(resume.get('state',{}).get('exact_cash',resume['cash'])); ledger.positions={t:D(q) for t,q in resume.get('state',{}).get('exact_positions',resume['positions']).items()}
         ledger.fills=resume['trades']; ledger.ids={f['id'] for f in ledger.fills}
         curve=resume['equity']; decisions=resume['decisions']; orders=resume['orders']
-        state=resume.get('state',{}); pending=[Signal(**s) for s in state.get('pending',[])]
+        state=resume.get('state',{}); pending_decision_id=state.get('pending_decision_id'); pending=[Signal(**s) for s in state.get('pending',[])]
         if ledger.fills and 'accounting' not in state: raise ValueError('Legacy checkpoint lacks exact FIFO state; create a new experiment')
         ledger.restore_accounting(state.get('accounting',{}))
         active=set(state.get('active',[])); copied=set(state.get('copied',[])); disclosure_audit=state.get('disclosure_audit',skipped)
@@ -160,6 +163,7 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
             return signal.action=='SELL' or (signal.ticker in opens and equity*D(signal.target_weight)<ledger.positions.get(signal.ticker,D(0))*D(opens[signal.ticker]))
         for n,s in enumerate(sorted(pending,key=lambda x:not reducing(x))):
             record=dict(date=stamp,signal=s.model_dump(),status='rejected',reason='')
+            if pending_decision_id: record['decision_id']=pending_decision_id
             orders.append(record)
             if s.ticker not in (active | set(ledger.positions) if normalized and c.strategy=='congressional' else set(c.universe)): record['reason']='Symbol outside universe'; continue
             if s.target_weight>cap or s.target_weight>c.max_exposure: record['reason']='Position or exposure limit'; continue
@@ -181,6 +185,7 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
             if ledger.cash-qty*px-D(c.fee)<0: record['reason']='Fees exceed cash'; continue
             ledger.fill(stamp+':'+str(n),s.ticker,qty,px,c.fee,stamp); ledger.fills[-1]['date']=stamp
             ledger.fills[-1]['slippage_cost']=float(abs(qty)*abs(px-D(opens[s.ticker])))
+            if pending_decision_id: ledger.fills[-1]['decision_id']=pending_decision_id
             record.update(status='filled',fill=ledger.fills[-1])
         pending=[]; prices.update(closes)
         value=float(ledger.equity(prices)); curve.append(dict(date=stamp,equity=value,cash=float(ledger.cash),positions={t:float(q) for t,q in ledger.positions.items()},prices=dict(prices)))
@@ -226,17 +231,21 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
                 if c.strategy=='momentum':
                     signals=[Signal(ticker=t,action='BUY' if t in selected else 'SELL',target_weight=min(cap,c.max_exposure/max(1,len(selected))) if t in selected else 0,rationale='Completed-bar moving-average crossover state') for t in sorted(set(selected)|{t for t,q in ledger.positions.items() if q})]
                 else:
-                    context=dict(timestamp=stamp,indicators=dict(list(indicators.items())[:20]),cash=float(ledger.cash),positions={t:float(q) for t,q in ledger.positions.items()},max_weight=cap,news=None,fundamentals=None)
-                    try: signals,trace=await evaluate(c,context)
+                    try:
+                        context=snapshot(c,history,manifest,curve[-1],curve,day)
+                        signals,trace=await evaluate(c,context)
+                        if any(t.get('role')=='audit' and t.get('status')=='failed' for t in trace):
+                            failures+=1; reason='Model decision failed; no action'
                     except Exception as exc: failures+=1; reason='Model failure: '+type(exc).__name__+'; no action'
         if signals or trace or reason:
-            decisions.append(dict(date=stamp,signals=[s.model_dump() for s in signals],trace=trace,reason=reason,snapshot=curve[-1]))
+            decisions.append(dict(id=stamp,version=1,date=stamp,signals=[s.model_dump() for s in signals],trace=trace,reason=reason,snapshot=curve[-1]))
         pending=signals
-        state=dict(exact_positions={t:str(q) for t,q in ledger.positions.items()},exact_cash=str(ledger.cash),pending=[s.model_dump() for s in pending],prices=prices,bullish=sorted(bullish),seen=sorted(seen),accounting=ledger.accounting_state(),active=sorted(active),copied=sorted(copied),disclosure_audit=disclosure_audit)
+        pending_decision_id=stamp if signals else None
+        state=dict(pending_decision_id=pending_decision_id,exact_positions={t:str(q) for t,q in ledger.positions.items()},exact_cash=str(ledger.cash),pending=[s.model_dump() for s in pending],prices=prices,bullish=sorted(bullish),seen=sorted(seen),accounting=ledger.accounting_state(),active=sorted(active),copied=sorted(copied),disclosure_audit=disclosure_audit)
         partial=dict(cash_interest=str(interest_total),equity=curve,trades=ledger.fills,orders=orders,decisions=decisions,cash=str(ledger.cash),positions={t:str(q) for t,q in ledger.positions.items()},state=state,failures=failures)
         if checkpoint and not checkpoint((index+1)/len(dates),partial): return dict(canceled=True)
     if c.mode=='historical': orders.extend(dict(date=None,signal=s.model_dump(),status='unfilled',reason='No subsequent session in experiment') for s in pending)
-    result=dict(state=dict(exact_positions={t:str(q) for t,q in ledger.positions.items()},exact_cash=str(ledger.cash),pending=[s.model_dump() for s in pending],prices=prices,bullish=sorted(bullish),seen=sorted(seen),accounting=ledger.accounting_state(),active=sorted(active),copied=sorted(copied),disclosure_audit=disclosure_audit),equity=curve,trades=ledger.fills,orders=orders,decisions=decisions,metrics=metrics(curve,ledger.fills,c.initial_capital),cash=float(ledger.cash),positions={t:float(q) for t,q in ledger.positions.items()},provenance=manifest,failures=failures)
+    result=dict(state=dict(pending_decision_id=pending_decision_id,exact_positions={t:str(q) for t,q in ledger.positions.items()},exact_cash=str(ledger.cash),pending=[s.model_dump() for s in pending],prices=prices,bullish=sorted(bullish),seen=sorted(seen),accounting=ledger.accounting_state(),active=sorted(active),copied=sorted(copied),disclosure_audit=disclosure_audit),equity=curve,trades=ledger.fills,orders=orders,decisions=decisions,metrics=metrics(curve,ledger.fills,c.initial_capital),cash=float(ledger.cash),positions={t:float(q) for t,q in ledger.positions.items()},provenance=manifest,failures=failures)
     from .analytics import trading_metrics
     result['metrics'].update(trading_metrics(ledger.fills,curve,decisions))
     result['metrics'].update(realized_pnl=float(ledger.realized), trade_win_rate=sum(p>0 for p in ledger.profits)/len(ledger.profits) if ledger.profits else None, average_holding_days=sum(ledger.holding_days)/len(ledger.holding_days) if ledger.holding_days else None)
@@ -273,6 +282,7 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
             result['failures']+=1
             result['warnings'].append('Partial coverage: missing executions are unfilled and existing holdings may use stale marks')
     result['metrics']['rejected_proposals']=sum(o['status']=='rejected' for o in orders)
-    result['metrics']['inference_cost_estimate']=sum(t['latency'] for d in decisions for t in d.get('trace',[]))*c.local_cost_per_hour/3600 if c.provider!='openai' else None
-    result['metrics']['llm_requests']=sum(len(d['trace']) for d in decisions if 'trace' in d)
+    estimates=[t.get('cost_estimate') for d in decisions for t in d.get('trace',[]) if t.get('role')=='audit' and t.get('actual_calls',0)]
+    result['metrics']['inference_cost_estimate']=sum(estimates) if estimates and all(v is not None for v in estimates) else None
+    result['metrics']['llm_requests']=sum(t.get('actual_calls',0) for d in decisions for t in d.get('trace',[]) if t.get('role')=='audit')
     return result

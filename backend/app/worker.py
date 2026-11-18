@@ -23,7 +23,24 @@ def execute(id):
     try:
         frame,manifest=inputs(config)
         validate(config,frame,manifest)
-        result=asyncio.run(simulate(config,frame,manifest,checkpoint,resume))
+        async def run_with_cancellation():
+            task=asyncio.create_task(simulate(config,frame,manifest,checkpoint,resume))
+            try:
+                while not task.done():
+                    done,_=await asyncio.wait({task},timeout=.5)
+                    if done: break
+                    with Session() as check_db:
+                        current=check_db.get(Experiment,id)
+                        if current is None or current.status=='canceled':
+                            task.cancel()
+                            await asyncio.gather(task,return_exceptions=True)
+                            return {'canceled':True}
+                return await task
+            finally:
+                if not task.done():
+                    task.cancel()
+                    await asyncio.gather(task,return_exceptions=True)
+        result=asyncio.run(run_with_cancellation())
         with Session() as db:
             e=db.scalar(select(Experiment).where(Experiment.id==id).with_for_update())
             if e is None or e.status=='canceled' or result.get('canceled'): return
@@ -33,12 +50,19 @@ def execute(id):
                 if not db.get(Record,key): db.add(Record(id=key,experiment_id=id,kind='fill',payload=f))
             result['execution_provenance']=execution_provenance
             persist_result(db,e,result)
-            e.result=result; e.status='waiting' if config.mode=='forward' else ('partial' if result['failures'] else 'completed'); e.updated=now(); db.commit()
+            e.result = result
+            if config.mode == 'forward':
+                e.status = 'waiting'
+            else:
+                e.progress = 1.0
+                e.status = 'completed_with_warnings' if result['failures'] else 'completed'
+            e.updated = now()
+            db.commit()
     except Exception as exc:
         with Session() as db:
             e=db.scalar(select(Experiment).where(Experiment.id==id).with_for_update())
             if e is None or e.status=='canceled': return
-            e.status='failed'; e.error=str(exc); e.updated=now(); db.commit()
+            e.status='failed'; e.error=type(exc).__name__ if config.strategy in ('single_agent','multi_agent') else str(exc); e.updated=now(); db.commit()
 def main():
     with engine.connect() as lock:
         if engine.dialect.name=='postgresql' and not lock.scalar(text('SELECT pg_try_advisory_lock(719243)')): raise RuntimeError('Worker already active')
