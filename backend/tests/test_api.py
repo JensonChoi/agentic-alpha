@@ -117,3 +117,39 @@ def test_llm_audit_persistence(client, monkeypatch):
 def test_evidence_import_rejects_bad_availability(client):
     payload=dict(id='bad-evidence',provenance='Synthetic fixture',synthetic=True,bars=[dict(date='2024-04-01',ticker='VOO',open=100,high=101,low=99,close=100,volume=10)],agent_evidence=[dict(id='news',ticker='VOO',kind='news',published_at='2024-04-01T12:00:00Z',available_at='2024-03-01T12:00:00Z',provenance='fixture')])
     assert client.post('/api/datasets/import',json=payload).status_code==422
+
+
+def test_full_window_with_failed_decisions_is_completed_with_warnings(client, monkeypatch):
+    simulate = worker.simulate
+
+    async def simulation_with_warning(*args):
+        result = await simulate(*args)
+        result['failures'] = 1
+        return result
+
+    monkeypatch.setattr(worker, 'simulate', simulation_with_warning)
+    response = client.post('/api/experiments', json={'strategy': 'buy_and_hold'})
+    identifier = response.json()['id']
+    worker.execute(identifier)
+
+    def assert_completed_with_warning():
+        exported = client.get(f'/api/experiments/{identifier}/export').json()
+        experiment = exported['experiment']
+        assert experiment['status'] == 'completed_with_warnings'
+        assert experiment['progress'] == 1
+        assert experiment['decision_failures'] == 1
+        assert client.post(f'/api/experiments/{identifier}/run').status_code == 409
+
+    assert_completed_with_warning()
+    with main.Session() as db:
+        row = db.get(Experiment, identifier)
+        assert row.status == 'completed_with_warnings'
+        row.status = 'partial'
+        db.commit()
+
+    assert_completed_with_warning()
+    with main.Session() as db:
+        row = db.get(Experiment, identifier)
+        row.progress = 0.5
+        db.commit()
+    assert client.get(f'/api/experiments/{identifier}').json()['status'] == 'partial'

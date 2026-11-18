@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select, delete
 from .db import Base, engine, Session, Experiment, Dataset, Record, now, ConfigRow, StrategyRow
 from .contracts import Config, STRATEGIES
-from .experiments import create_experiment, queue
+from .experiments import create_experiment, experiment_status, queue
 from .db import DisclosureSnapshot, BenchmarkSuite
 from .data import seed_demo, load
 from .engine import simulate
@@ -32,7 +32,7 @@ def get(db,id):
     row=db.scalar(select(Experiment).where(Experiment.id == id).with_for_update())
     if not row: raise HTTPException(404,'Experiment not found')
     return row
-def describe(e): return dict(execution_provenance=e.result.get('execution_provenance',{}), id=e.id,config=e.config,status=e.status,progress=e.progress,created=e.created,updated=e.updated,error=e.error)
+def describe(e): return dict(execution_provenance=e.result.get('execution_provenance',{}), id=e.id,config=e.config,status=experiment_status(e),decision_failures=e.result.get('failures', 0),progress=e.progress,created=e.created,updated=e.updated,error=e.error)
 @app.get('/api/health')
 def health(): return {'status':'ok','simulation_only':True}
 @app.get('/api/strategies',dependencies=[Depends(auth)])
@@ -57,7 +57,7 @@ def experiment(id:str):
 async def run(id:str):
     with Session() as db:
         e=get(db,id); c=Config(**e.config)
-        if e.status not in ('created','failed','partial'): raise HTTPException(409,'Experiment is already queued or completed')
+        if experiment_status(e) not in ('created','failed','partial'): raise HTTPException(409,'Experiment is already queued or completed')
         if c.strategy in ('single_agent','multi_agent'):
             available=await models(c.provider)
             final_available=await models(c.decision_provider) if c.decision_provider and c.decision_provider!=c.provider else available

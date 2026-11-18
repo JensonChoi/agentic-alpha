@@ -50,7 +50,14 @@ def execute(id):
                 if not db.get(Record,key): db.add(Record(id=key,experiment_id=id,kind='fill',payload=f))
             result['execution_provenance']=execution_provenance
             persist_result(db,e,result)
-            e.result=result; e.status='waiting' if config.mode=='forward' else ('partial' if result['failures'] else 'completed'); e.updated=now(); db.commit()
+            e.result = result
+            if config.mode == 'forward':
+                e.status = 'waiting'
+            else:
+                e.progress = 1.0
+                e.status = 'completed_with_warnings' if result['failures'] else 'completed'
+            e.updated = now()
+            db.commit()
     except Exception as exc:
         with Session() as db:
             e=db.scalar(select(Experiment).where(Experiment.id==id).with_for_update())
