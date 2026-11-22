@@ -77,14 +77,17 @@ The tool dispatcher accepts no paths, URLs, SQL or executable code.
 
 ## Providers and telemetry
 
-All providers use the explicitly selected `structured_envelope_v1` JSON request
-protocol, not native tool calling. Ollama receives a JSON schema, temperature,
+All providers exchange JSON envelopes. General inference uses `structured_envelope_v1`.
+Price-only single-agent decisions use `price_only_actions_v3`. Price-only multi-agent
+decisions use `price_review_v1`, which gives each role its own completion schema
+and restricts tool requests to the role’s available tools and remaining budget.
+The portfolio agent receives validated recommendations and the evidence they cite. Ollama receives a JSON schema, temperature,
 seed, output/context limits, and optional `thinking` control. Compatible/cloud
 adapters request JSON-object output, temperature, seed, and output limit; context
 is server-managed and seed support is explicitly unverified. Unsupported thinking
 controls are rejected. Model/template support is not inferred from a model listing.
 A server rejecting schema/settings fails closed; there is no silent fallback.
-Qwen and Gemma share mocked adapter tests; neither has been verified live here.
+Qwen and Gemma share mocked adapter tests. See the [historical benchmarks](benchmark-report.md) for local model results.
 No Qwen-specific reasoning field or template is assumed for Gemma.
 
 `OLLAMA_BASE_URL`, `COMPATIBLE_BASE_URL`, `OPENAI_BASE_URL` and corresponding API
