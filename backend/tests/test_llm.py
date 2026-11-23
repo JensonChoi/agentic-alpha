@@ -381,3 +381,126 @@ async def test_invalid_json_retry_preserves_safe_metadata(monkeypatch, stop_reas
     assert trace[-1]['actual_calls'] == 2
     assert trace[-1]['status'] == ('completed' if recover else 'failed')
     assert 'SECRET' not in json.dumps(trace)
+
+
+@pytest.mark.parametrize('action', ['BUY', 'SELL', 'HOLD'])
+async def test_price_review_tools_abstention_and_synthesis(monkeypatch, action):
+    c, ctx = setup(price_only=True, tool_calls=1, max_model_calls=5)
+    c.strategy = 'multi_agent'
+    if action == 'SELL':
+        ctx['holdings'] = {'AAPL': 1}
+    evidence_id = None
+
+    async def post(self, url, json, **kwargs):
+        nonlocal evidence_id
+        import json as codec
+        schema = json['format']
+        payload = codec.loads(json['messages'][1]['content'])
+        defs = schema['$defs']
+        if 'AnalystOutput' in defs:
+            role = defs['AnalystOutput']['properties']['role']['const']
+            findings = []
+            if role == 'technical' and not payload['tool_results']:
+                assert schema['anyOf'][1]['required'] == ['tools']
+                output = {'tools': [{'name': 'prices', 'ticker': 'AAPL', 'rows': 2}]}
+            else:
+                assert schema['required'] == ['analyst']
+                if role == 'technical':
+                    evidence_id, = payload['tool_results'][0]['evidence_refs']
+                    findings = [dict(ticker='AAPL', action='BUY', rationale='Rising', evidence_refs=[evidence_id])]
+                else:
+                    assert payload['allowed_refs'] == ['snapshot']
+                output = {'analyst': dict(role=role, findings=findings, concerns=[], candidates_considered=[],
+                                          missing_inputs=['news', 'fundamentals'] if role == 'fundamental_news' else [])}
+        else:
+            recs = payload['analyst_recommendations']
+            assert len(recs['recommendations']) == 3
+            assert recs['evidence'][evidence_id]['data']['rows'] == 2
+            assert recs['recorded_differences']['AAPL']['technical'] == ['BUY']
+            assert schema['required'] == ['final']
+            signal = dict(ticker='AAPL', action=action, rationale='Review completed')
+            if action == 'BUY':
+                signal['target_weight'] = .1
+            output = {'final': {**final().final.model_dump(), 'signals': [signal], 'evidence_refs': [evidence_id]}}
+        return httpx.Response(200, json={'message': {'content': codec.dumps(output)}}, request=httpx.Request('POST', url))
+
+    monkeypatch.setattr(httpx.AsyncClient, 'post', post)
+    signals, trace = await evaluate(c, ctx)
+    assert [s.action for s in signals] == [action]
+    assert trace[-1]['actual_calls'] == 5
+    assert [t['role'] for t in trace if t.get('validation_status') == 'validated'] == [
+        'technical', 'fundamental_news', 'risk', 'portfolio']
+
+
+async def test_price_review_rejected_required_analysts_produce_no_orders(monkeypatch):
+    from app.engine import simulate
+    c, _ = setup(price_only=True)
+    c.strategy = 'multi_agent'
+    c.rebalance = 'daily'
+
+    async def bad(config, role, *args):
+        if role == 'risk':
+            return final(), {}
+        analyst = dict(role=role, candidates_considered=[], findings=[], concerns=[], missing_inputs=['news'])
+        return Envelope(analyst=analyst, tools=[ToolRequest(name='prices', ticker='AAPL')] if role == 'technical' else []), {}
+
+    monkeypatch.setattr('app.inference.call', bad)
+    result = await simulate(c, *fixture())
+    assert result['failures'] > 0 and not result['orders'] and not result['trades']
+    errors = {t['role']: t['error_code'] for d in result['decisions'] for t in d['trace'] if 'error_code' in t}
+    assert errors == dict(technical='mixed_tools_and_output', risk='expected_analyst_output', audit='required_analyst_failed')
+
+
+@pytest.mark.parametrize('failure,role,code', [
+    ('budget', 'risk', 'model_budget_exhausted'),
+    ('foreign_ref', 'risk', 'unknown_finding_evidence'),
+    ('coverage', 'fundamental_news', 'expected_coverage_abstention'),
+    ('cap', 'portfolio', 'buy_weight_above_cap'),
+])
+async def test_price_review_rejects_invalid_completion(monkeypatch, failure, role, code):
+    c, ctx = setup(price_only=True, max_model_calls=3 if failure == 'budget' else 5)
+    c.strategy = 'multi_agent'
+
+    async def fake(config, current, payload, *args):
+        if current == 'portfolio':
+            output = final()
+            output.final.signals[0].target_weight = 1
+            return output, {}
+        findings = []
+        if current == 'technical' and failure == 'foreign_ref' and not payload['tool_results']:
+            return Envelope(tools=[ToolRequest(name='prices', ticker='AAPL')]), {}
+        if current == 'risk' and failure == 'foreign_ref':
+            ref, = dispatch(ToolRequest(name='prices', ticker='AAPL'), ctx, c)['evidence_refs']
+            assert ref not in payload['allowed_refs']
+            findings = [dict(ticker='AAPL', action='HOLD', rationale='Risk review', evidence_refs=[ref])]
+        return Envelope(analyst=dict(role=current, candidates_considered=[], findings=findings, concerns=[],
+                                     missing_inputs=[] if failure == 'coverage' else ['news'])), {}
+
+    monkeypatch.setattr('app.inference.call', fake)
+    signals, trace = await evaluate(c, ctx)
+    assert not signals
+    assert any(t['role'] == role and t.get('error_code') == code for t in trace)
+    if failure == 'budget':
+        assert trace[-1]['actual_calls'] == 2
+
+
+@pytest.mark.parametrize('quantity,mark,equity,weight,above', [
+    (174.8282604555809, 111.19999694824219, 99644.68064948487, .1951022563614146, False),
+    (194.3067496321048, 108.69999694824219, 99080.55730445476, .2131714199702329, True),
+    (200, 100, 100000, .2, False),
+    (200, None, 100000, None, None),
+])
+def test_price_review_holding_units(quantity, mark, equity, weight, above):
+    from app.inference import review_snapshot
+
+    config, ctx = setup(price_only=True, max_position_weight=.2)
+    config.strategy = 'multi_agent'
+    ctx['entries'] = []
+    ctx['holdings'] = {'DIS': quantity}
+    ctx['portfolio'].update(equity=equity, positions=ctx['holdings'], prices={'DIS': mark})
+    facts = dispatch(ToolRequest(name='positions'), ctx, config)['data']
+    for role in ('risk', 'portfolio'):
+        assert review_snapshot(ctx, role)['holdings'] == facts
+    assert facts['DIS'] == dict(quantity_shares=quantity, mark_price_usd=mark,
+                                market_value_usd=None if mark is None else quantity * mark,
+                                weight_fraction=weight, above_target=above)
