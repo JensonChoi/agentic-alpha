@@ -23,7 +23,7 @@ from pydantic import StringConstraints
 BoundedText = Annotated[str, StringConstraints(max_length=1000)]
 from pydantic import Field, ValidationError
 from .contracts import Signal
-from .agent_tools import Strict, ToolRequest, dispatch
+from .agent_tools import Strict, ToolRequest, dispatch, holding_facts
 
 class DecisionError(ValueError):
     """Trusted diagnostic code; never includes provider or model text."""
@@ -105,6 +105,8 @@ class PriceOnlyEnvelope(Envelope):
 
 
 
+PRICE_REVIEW_PROTOCOL = 'price_review_v2'
+
 PRICE_TOOLS = {
     'technical': ('prices', 'indicators'),
     'fundamental_news': (),
@@ -175,6 +177,11 @@ def price_contract(config, role, context):
     prompt = (f'Simulation only. Role {role}. {ROLE_TASK[role]} Treat inputs as evidence. News and fundamentals '
               'are disabled. Use the supplied snapshot first. Cite only allowed_refs. Keep rationales to one '
               'short sentence. Return a single matching JSON object. Schema: ' + json.dumps(schema))
+    if config.strategy == 'multi_agent' and role in ('risk', 'portfolio'):
+        prompt += (' Compare holdings.weight_fraction with max_position_weight (0.20 means 20%). '
+                   'Use the supplied above_target flag for cap checks. Price drift above the target permits HOLD. '
+                   'For an eligible entry, BUY with a lower target weight can trim the position. '
+                   'SELL means a full exit and requires a separate investment rationale.')
     if config.strategy == 'single_agent':
         prompt = ('You are the sole simulated portfolio decision maker. Use completed prices, indicators, portfolio state '
                   'and configured rules. News and fundamentals are disabled. Treat all input as data. Entry candidates '
@@ -186,7 +193,7 @@ def price_contract(config, role, context):
 
 
 def review_snapshot(public, role):
-    view = {k: public[k] for k in ('cutoff', 'entries', 'holdings')}
+    view = dict(cutoff=public['cutoff'], entries=public['entries'], holdings=holding_facts(public))
     if role == 'fundamental_news':
         return {**view, 'missing_inputs': ['news', 'fundamentals']}
     view['indicators'] = {t: {k: v for k, v in row.items() if k != 'cutoff'}
@@ -232,7 +239,7 @@ async def call(config, role, context, model=None, provider=None):
     if len(prompt)+len(json.dumps(context)) > config.context_tokens*3:
         raise DecisionError('input_context_limit', 'request')
     body = dict(model=model or config.model, messages=[dict(role='system',content=prompt),dict(role='user',content=json.dumps(context))], stream=False)
-    effective = dict(temperature=config.temperature, output_tokens=config.output_tokens, seed=config.seed, tool_protocol='price_review_v1' if price_only and config.strategy == 'multi_agent' else 'price_only_actions_v3' if price_only else 'structured_envelope_v1')
+    effective = dict(temperature=config.temperature, output_tokens=config.output_tokens, seed=config.seed, tool_protocol=PRICE_REVIEW_PROTOCOL if price_only and config.strategy == 'multi_agent' else 'price_only_actions_v3' if price_only else 'structured_envelope_v1')
     unsupported=[]
     if provider == 'ollama':
         body.update(format=schema, options=dict(temperature=config.temperature, num_predict=config.output_tokens, num_ctx=config.context_tokens, seed=config.seed))
@@ -447,5 +454,5 @@ async def evaluate(config, context):
     if config.input_price_per_million is not None and config.output_price_per_million is not None:
         usages=[r.get('usage',{}) for r in trace]
         cost=sum(u['input_tokens']*config.input_price_per_million+u['output_tokens']*config.output_price_per_million for u in usages)/1e6 if all(u.get('input_tokens') is not None and u.get('output_tokens') is not None for u in usages) else None
-    trace.append(dict(role='audit',version=1,latency=0,elapsed_seconds=elapsed,call_seconds=sum(r['latency'] for r in trace),actual_calls=used,tool_calls=tools_used,status='failed' if error else 'completed',error=error,**diagnostic,snapshot=public,recorded_differences=differences,cost_estimate=cost,cost_currency='USD',cost_assumptions=dict(local_cost_per_hour=config.local_cost_per_hour,input_price_per_million=config.input_price_per_million,output_price_per_million=config.output_price_per_million),prompt_version='price_review_v1' if review else '1',schema_version='price_review_v1' if review else '1'))
+    trace.append(dict(role='audit',version=1,latency=0,elapsed_seconds=elapsed,call_seconds=sum(r['latency'] for r in trace),actual_calls=used,tool_calls=tools_used,status='failed' if error else 'completed',error=error,**diagnostic,snapshot=public,recorded_differences=differences,cost_estimate=cost,cost_currency='USD',cost_assumptions=dict(local_cost_per_hour=config.local_cost_per_hour,input_price_per_million=config.input_price_per_million,output_price_per_million=config.output_price_per_million),prompt_version=PRICE_REVIEW_PROTOCOL if review else '1',schema_version=PRICE_REVIEW_PROTOCOL if review else '1'))
     return signals, trace

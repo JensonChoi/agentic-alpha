@@ -79,8 +79,9 @@ The tool dispatcher accepts no paths, URLs, SQL or executable code.
 
 All providers exchange JSON envelopes. General inference uses `structured_envelope_v1`.
 Price-only single-agent decisions use `price_only_actions_v3`. Price-only multi-agent
-decisions use `price_review_v1`, which gives each role its own completion schema
+decisions use `price_review_v2`, which gives each role its own completion schema
 and restricts tool requests to the role’s available tools and remaining budget.
+Both the snapshot and positions tool label share quantities, USD marks and market values, and weights as fractions of equity. The backend flags holdings above the per-position target at the decision cutoff. Drift alone permits holding the position. The original annual benchmarks used `price_review_v1`.
 The portfolio agent receives validated recommendations and the evidence they cite. Ollama receives a JSON schema, temperature,
 seed, output/context limits, and optional `thinking` control. Compatible/cloud
 adapters request JSON-object output, temperature, seed, and output limit; context

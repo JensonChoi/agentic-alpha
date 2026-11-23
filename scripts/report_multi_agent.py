@@ -28,7 +28,8 @@ def main():
             observations = []
             for label, slug in [('Qwen 3.5 9B', 'qwen3.5-9b'), ('Gemma 4 12B', 'gemma4-12b')]:
                 single_id = next(re.search(r'`([a-f0-9-]+)`', line)[1] for line in rows if f'{label} single-agent |' in line)
-                multi_id = (OUTPUT / f'{year}-{slug}.id').read_text().strip()
+                campaign = f'{year}-price_review_v2'
+                multi_id = (OUTPUT / f'{campaign}-{slug}.id').read_text().strip()
                 expected = Config.model_validate_json((ROOT / 'configs' / 'benchmarks' / 'price-only-multi-agent'
                                                        / f'{year}-{slug}.json').read_text())
                 stats = []

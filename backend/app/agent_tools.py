@@ -1,5 +1,6 @@
 """Immutable, point-in-time evidence and read-only agent retrieval."""
 import json
+from math import isclose
 from typing import Literal
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
@@ -74,6 +75,21 @@ def snapshot(config, history, manifest, portfolio, curve, day):
     return context
 
 
+def holding_facts(context: dict) -> dict:
+    """Value held shares with the same cutoff marks used for portfolio equity."""
+    portfolio = context['portfolio']
+    cap = context['rules']['max_position_weight']
+    facts = {}
+    for ticker, quantity in context['holdings'].items():
+        mark = portfolio.get('prices', {}).get(ticker)
+        value = quantity * mark if mark is not None else None
+        weight = value / portfolio['equity'] if value is not None and portfolio['equity'] > 0 else None
+        above_target = None if weight is None else weight > cap and not isclose(weight, cap, rel_tol=0, abs_tol=1e-12)
+        facts[ticker] = dict(quantity_shares=quantity, mark_price_usd=mark, market_value_usd=value,
+                             weight_fraction=weight, above_target=above_target)
+    return facts
+
+
 def dispatch(request, context, config):
     allowed = set(context['entries'])|set(context['holdings'])
     name = request.name
@@ -85,7 +101,8 @@ def dispatch(request, context, config):
         return dict(status='rejected', reason='Unexpected ticker', evidence_refs=[])
     if name == 'prices': value = [b for b in context['_bars'] if b['ticker']==request.ticker][-request.rows:]
     elif name == 'indicators': value = context['indicators'].get(request.ticker)
-    elif name == 'positions': value = context['holdings']
+    elif name == 'positions':
+        value = holding_facts(context) if config.price_only and config.strategy == 'multi_agent' else context['holdings']
     elif name == 'cash': value = {k:context['portfolio'][k] for k in ('cash','equity')}
     elif name == 'rules': value = context['rules']
     else:

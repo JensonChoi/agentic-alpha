@@ -10,7 +10,7 @@ from audit_multi_agent import audit
 from app.contracts import Config
 from app.db import Experiment, Session
 from app.experiments import create_experiment, inputs, validate
-from app.inference import settings
+from app.inference import PRICE_REVIEW_PROTOCOL, settings
 from app.worker import execute
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,7 +49,7 @@ def run(config, label):
         summary = dict(id=row.id, status=row.status, **audit(config, row.result))
         Path(f'{path}-audit.json').write_text(json.dumps(summary, indent=2) + '\n')
         print(json.dumps(summary), flush=True)
-        if label == 'smoke' and not summary['accepted']:
+        if label.startswith('smoke-') and not summary['accepted']:
             raise RuntimeError(f'Smoke gate failed for {config.model}')
     if not finished:
         base, headers = settings('ollama')
@@ -76,10 +76,10 @@ def campaign(stage):
     for year in (2026, 2025, 2024):
         for model in ('qwen3.5-9b', 'gemma4-12b'):
             config = Config.model_validate_json((configs / f'{year}-{model}.json').read_text())
-            measured.append((str(year), config))
+            measured.append((f'{year}-{PRICE_REVIEW_PROTOCOL}', config))
             if year == 2026:
                 smoke = config.model_copy(update={'end': config.start.replace(day=20), 'name': f'Smoke {config.name}'})
-                run(smoke, 'smoke')
+                run(smoke, f'smoke-{PRICE_REVIEW_PROTOCOL}')
     if stage == 'annual':
         for year, config in measured:
             run(config, year)

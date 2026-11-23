@@ -482,3 +482,25 @@ async def test_price_review_rejects_invalid_completion(monkeypatch, failure, rol
     assert any(t['role'] == role and t.get('error_code') == code for t in trace)
     if failure == 'budget':
         assert trace[-1]['actual_calls'] == 2
+
+
+@pytest.mark.parametrize('quantity,mark,equity,weight,above', [
+    (174.8282604555809, 111.19999694824219, 99644.68064948487, .1951022563614146, False),
+    (194.3067496321048, 108.69999694824219, 99080.55730445476, .2131714199702329, True),
+    (200, 100, 100000, .2, False),
+    (200, None, 100000, None, None),
+])
+def test_price_review_holding_units(quantity, mark, equity, weight, above):
+    from app.inference import review_snapshot
+
+    config, ctx = setup(price_only=True, max_position_weight=.2)
+    config.strategy = 'multi_agent'
+    ctx['entries'] = []
+    ctx['holdings'] = {'DIS': quantity}
+    ctx['portfolio'].update(equity=equity, positions=ctx['holdings'], prices={'DIS': mark})
+    facts = dispatch(ToolRequest(name='positions'), ctx, config)['data']
+    for role in ('risk', 'portfolio'):
+        assert review_snapshot(ctx, role)['holdings'] == facts
+    assert facts['DIS'] == dict(quantity_shares=quantity, mark_price_usd=mark,
+                                market_value_usd=None if mark is None else quantity * mark,
+                                weight_fraction=weight, above_target=above)
