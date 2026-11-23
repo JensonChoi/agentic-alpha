@@ -35,11 +35,11 @@ SQLite is the local development fallback. Compose uses PostgreSQL and runs Alemb
 - `momentum`: completed-bar 20/50-day crossovers, persistent bullish state, capped equal weights, alphabetical tie-breaking, configurable rebalance frequency.
 - `congressional`: disclosure availability drives execution, with equal/fixed/midpoint-proportional purchase allocation and full-position exits on sell disclosures. Proportional sizes are approximations. Unsupported securities are skipped.
 - `single_agent`: bounded indicator snapshot and simulated positions produce validated JSON proposals.
-- `multi_agent`: three concurrent analysts followed by a portfolio decision model. Advisory risk recommendations cannot override deterministic controls.
+- `multi_agent` runs technical, fundamental/news, and risk analysts with configurable concurrency. The portfolio manager receives their validated recommendations and proposes trades under the shared risk controls. The published benchmarks run all four roles sequentially.
 
 Install a model in Ollama separately, configure `OLLAMA_BASE_URL`, and enter its exact model identifier in the form. Models are checked before queueing. For the optional Compose Ollama service, use `docker compose --profile ollama up -d` and set `OLLAMA_BASE_URL=http://ollama:11434`; pull your chosen model in that container. OpenAI-compatible inference uses `COMPATIBLE_BASE_URL`. Cloud use requires `ENABLE_CLOUD=true` and `OPENAI_API_KEY`; local failures never fall back to cloud.
 
-Agents receive bounded read-only snapshots, not shell access or general web retrieval. News and fundamentals are explicitly unavailable. Outputs are validated; failures record no action. Historical models can contain future knowledge in their training and are not fully point-in-time clean.
+Agents receive bounded read-only snapshots, not shell access or general web retrieval. In price-only runs, the fundamental/news analyst records missing coverage and abstains. Outputs are validated; failures record no action. Historical models can contain future knowledge in their training and are not fully point-in-time clean.
 
 ## Import research data
 
@@ -113,7 +113,7 @@ The software is provided without warranty under the MIT License. To the fullest 
 
 ## Real-data baselines and family disclosures
 
-The [benchmark report](docs/benchmark-report.md) is the single reference for current 2026 results, assumptions, source validation and prior runs. All three strategies complete under the filing-date publication assumption: VOO +11.0384%, momentum +1.0045%, and congressional +0.7847% with inferred pre-start holdings and 3.5% annual cash interest. Default verified timing remains blocked by missing publication evidence. No synthetic disclosures replace real records.
+The historical benchmarks cover 2024, 2025, and 2026 through October 30. They compare VOO, momentum, congressional disclosures under the filing-date assumption, and price-only single-agent and multi-agent strategies. Across the three windows, multi-agent Gemma and single-agent Qwen each earned higher returns and experienced larger maximum drawdowns than their respective counterparts. Each comparison uses one run per strategy on the same ten tickers. Real ticker symbols and dates could cue market outcomes learned during model training, which limits what these backtests establish about future performance. [Benchmark report and limitations](docs/benchmark-report.md#discussion)
 
 See [the complete acquisition, benchmark and offline reproduction workflow](docs/real-data.md). The `benchmark` command now queues persisted experiments through the existing worker; it no longer runs a separate simulator. Default strategies are VOO and momentum. Explicit congressional requests without usable verified records remain blocked in the persisted suite. [Baseline configuration](configs/examples/real-baselines.json) and [three-strategy family configuration](configs/examples/pelosi-family.json) provide examples. All execution remains simulated.
 

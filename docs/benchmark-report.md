@@ -75,6 +75,8 @@ Qwen 3.5 9B single-agent recorded portfolio `duplicate_signal_symbol` (5). Qwen 
 
 Analyst review improved return in 3 of six model/year comparisons. The six multi-agent portfolios reconciled to daily equity. All 426 fills passed the cash and total-exposure checks. The results cover one run per model and window on a fixed universe. Across the six multi-agent runs, the three analyst roles accounted for 902 of 1,191 calls and 3.6 hours of inference time. The six single-agent runs used 387 calls in total.
 
+**Possible hindsight from training.** The simulator supplied only prices available on each decision date, but the models also saw real ticker symbols and calendar dates. They could have recognized outcomes learned during training. Google reports a January 2025 pretraining cutoff for Gemma 4 12B, so its training window overlaps the 2024 backtest. We could not verify an exact cutoff for Qwen3.5 9B. These runs cannot establish whether either model used remembered outcomes or how much that influenced returns. Recording weekly decisions from frozen models before future market opens would test whether the observed advantages persist. [Gemma model card](https://huggingface.co/google/gemma-4-12B-it#training-dataset) · [Qwen model card](https://huggingface.co/Qwen/Qwen3.5-9B)
+
 **2026 Qwen 3.5 9B.** Analyst review changed return by -24.71 percentage points and maximum drawdown by -4.25 points. Validated weeks went from 39 to 43 out of 43. Calls increased from 45 to 192, and mean time per scheduled decision went from 33.1 to 66.7 seconds.
 
 **2026 Gemma 4 12B.** Analyst review changed return by +1.19 percentage points and maximum drawdown by +5.21 points. Validated weeks went from 39 to 43 out of 43. Calls increased from 58 to 172, and mean time per scheduled decision went from 36.9 to 63.0 seconds.
@@ -86,3 +88,9 @@ Analyst review improved return in 3 of six model/year comparisons. The six multi
 **2024 Qwen 3.5 9B.** Analyst review changed return by -27.90 percentage points and maximum drawdown by -1.56 points. Validated weeks went from 47 to 48 out of 52. Calls increased from 55 to 218, and mean time per scheduled decision went from 38.6 to 84.8 seconds.
 
 **2024 Gemma 4 12B.** Analyst review changed return by +4.38 percentage points and maximum drawdown by +1.73 points. Validated weeks went from 51 to 52 out of 52. Calls increased from 81 to 208, and mean time per scheduled decision went from 45.4 to 73.2 seconds.
+
+## Conclusion
+
+Across all three years, multi-agent Gemma and single-agent Qwen earned higher returns than their respective counterparts, with larger maximum drawdowns in both cases. Gemma’s multi-agent return advantage ranged from 1.19 percentage points in 2026 to 27.02 in 2025. Across all six comparisons, multi-agent runs used 3.1× as many model calls.
+
+Each comparison used one run per strategy on the same ten tickers. Repeated runs on held-out periods and other ticker universes would test whether the pattern persists.

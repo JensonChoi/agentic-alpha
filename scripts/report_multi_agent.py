@@ -13,6 +13,7 @@ from multi_agent_benchmarks import OUTPUT, ROOT
 def main():
     path = ROOT / 'docs' / 'benchmark-report.md'
     report = path.read_text()
+    report, conclusion_heading, conclusion_text = report.partition('\n## Conclusion\n')
     report, _ = report.split('## Discussion', 1)
     discussion = []
     winners = []
@@ -84,7 +85,18 @@ def main():
     conclusion += (f' Across the six multi-agent runs, the three analyst roles accounted for {count:,} of '
                    f'{sum(analyst_calls.values()):,} calls and {hours:.1f} hours of inference time. '
                    f'The six single-agent runs used {calls} calls in total.')
-    path.write_text(report.rstrip() + '\n\n## Discussion\n\n' + conclusion + '\n\n' + '\n\n'.join(discussion) + '\n')
+    discussion.insert(0, (
+        '**Possible hindsight from training.** The simulator supplied only prices available on each decision date, '
+        'but the models also saw real ticker symbols and calendar dates. They could have recognized outcomes learned '
+        'during training. Google reports a January 2025 pretraining cutoff for Gemma 4 12B, so its training window '
+        'overlaps the 2024 backtest. We could not verify an exact cutoff for Qwen3.5 9B. These runs cannot establish '
+        'whether either model used remembered outcomes or how much that influenced returns. Recording weekly decisions '
+        'from frozen models before future market opens would test whether the observed advantages persist. '
+        '[Gemma model card](https://huggingface.co/google/gemma-4-12B-it#training-dataset) · '
+        '[Qwen model card](https://huggingface.co/Qwen/Qwen3.5-9B)'
+    ))
+    path.write_text(report.rstrip() + '\n\n## Discussion\n\n' + conclusion + '\n\n' + '\n\n'.join(discussion) + '\n'
+                    + conclusion_heading + conclusion_text)
     render_charts()
 
 
