@@ -69,6 +69,7 @@ class Config(BaseModel):
     fundamentals_max_age_days: int = Field(default=180, ge=1, le=730)
     input_price_per_million: float | None = Field(default=None, ge=0)
     output_price_per_million: float | None = Field(default=None, ge=0)
+    api_budget_usd: float | None = Field(default=None, gt=0)
     thinking: bool | None = None
     @model_validator(mode='before')
     @classmethod

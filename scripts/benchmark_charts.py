@@ -13,7 +13,8 @@ from app.db import Experiment, Session
 DOCS = Path(__file__).resolve().parents[1] / 'docs'
 STYLES = [
     ('#414b5b', '7 4'), ('#845128', '3 4'), ('#126e64', ''), ('#9d3560', '8 3 2 3'),
-    ('#3454b4', ''), ('#7842a0', ''), ('#3454b4', '8 4'), ('#7842a0', '8 4'),
+    ('#3454b4', ''), ('#7842a0', ''), ('#3454b4', '8 4'), ('#7842a0', '8 4'), ('#b44c13', ''),
+    ('#b44c13', '8 4'),
 ]
 
 
@@ -27,11 +28,12 @@ def chart(year, series, low, high):
     def y(value):
         return 319 - 259 * (value - low) / (high - low)
 
-    svg = ET.Element('svg', xmlns='http://www.w3.org/2000/svg', viewBox='0 0 880 450', role='img',
+    height = 450 + 26 * max(0, (len(series) - 1) // 3 - 2)
+    svg = ET.Element('svg', xmlns='http://www.w3.org/2000/svg', viewBox=f'0 0 880 {height}', role='img',
                      attrib={'aria-labelledby': 'title desc'})
     ET.SubElement(svg, 'title', id='title').text = f'{year} cumulative portfolio returns'
     ET.SubElement(svg, 'desc', id='desc').text = 'Daily portfolio returns from $100,000 for the strategies in the results table.'
-    ET.SubElement(svg, 'rect', width='880', height='450', rx='12', fill='white')
+    ET.SubElement(svg, 'rect', width='880', height=str(height), rx='12', fill='white')
     group = ET.SubElement(svg, 'g', {'font-family': 'system-ui, sans-serif', 'fill': '#17243b'})
 
     def label(xpos, ypos, value, size=13, anchor='start'):
@@ -62,8 +64,7 @@ def chart(year, series, low, high):
     return ET.tostring(svg, encoding='unicode') + '\n'
 
 
-def main():
-    report = (DOCS / 'benchmark-report.md').read_text()
+def render_report(report):
     years = {}
     with Session() as db:
         for year in (2026, 2025, 2024):
@@ -83,8 +84,12 @@ def main():
     values = [value for series in years.values() for _, points in series for _, value in points]
     low = min(-40, 20 * floor(min(values) / 20))
     high = max(80, 20 * ceil(max(values) / 20))
-    for year, series in years.items():
-        (DOCS / 'images' / f'benchmark-returns-{year}.svg').write_text(chart(year, series, low, high))
+    return {year: chart(year, series, low, high) for year, series in years.items()}
+
+
+def main():
+    for year, svg in render_report((DOCS / 'benchmark-report.md').read_text()).items():
+        (DOCS / 'images' / f'benchmark-returns-{year}.svg').write_text(svg)
 
 
 if __name__ == '__main__':

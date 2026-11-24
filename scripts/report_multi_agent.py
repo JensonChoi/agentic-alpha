@@ -25,7 +25,8 @@ def main():
             section = report.split(f'### {year}\n', 1)[1].split('\n### ', 1)[0].strip()
             table, image = section.split('\n\n![', 1)
             image_path = re.search(r'\]\(([^)]+)\)', image)[1]
-            rows = [line for line in table.splitlines() if ' multi-agent |' not in line]
+            cloud_rows = [line for line in table.splitlines() if line.startswith('| GPT-5.5 ')]
+            rows = [line for line in table.splitlines() if ' multi-agent |' not in line and line not in cloud_rows]
             observations = []
             for label, slug in [('Qwen 3.5 9B', 'qwen3.5-9b'), ('Gemma 4 12B', 'gemma4-12b')]:
                 single_id = next(re.search(r'`([a-f0-9-]+)`', line)[1] for line in rows if f'{label} single-agent |' in line)
@@ -68,7 +69,9 @@ def main():
                                   f"{single['accepted']} to {multi['accepted']} out of {multi['scheduled']}. "
                                   f"Calls increased from {single['calls']} to {multi['calls']}, and mean time per scheduled "
                                   f"decision went from {single['mean_week_seconds']:.1f} to {multi['mean_week_seconds']:.1f} seconds.")
-            replacement = '\n'.join(rows) + f'\n\n![{year} daily cumulative returns for all eight strategies]({image_path})'
+            rows.extend(cloud_rows)
+            count = ('eight', 'nine', 'ten')[len(cloud_rows)]
+            replacement = '\n'.join(rows) + f'\n\n![{year} daily cumulative returns for all {count} strategies]({image_path})'
             if observations:
                 replacement += '\n\n' + ' '.join(observations)
             report = report.replace(section, replacement, 1)

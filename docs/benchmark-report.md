@@ -32,8 +32,10 @@ Charts show daily cumulative return from the $100,000 starting balance on a shar
 | Gemma 4 12B single-agent | +11.13% | $111,130.94 | 11.46% | 50 | 39/43 | `733925e2-c399-4f1b-a646-16142d1e223d` |
 | Qwen 3.5 9B multi-agent | +1.81% | $101,806.39 | 11.26% | 83 | 43/43 | `bc773ef8-10bf-4773-9520-003d4dd0bdfe` |
 | Gemma 4 12B multi-agent | +12.33% | $112,325.90 | 16.67% | 29 | 43/43 | `96b55d2e-d3c8-4643-b2f2-228688d80756` |
+| GPT-5.5 single-agent | -4.56% | $95,439.12 | 14.51% | 55 | 41/43 | `f23204e3-9deb-4c55-b5fe-c4f2b3dee873` |
+| GPT-5.5 multi-agent | +8.17% | $108,174.06 | 18.26% | 9 | 43/43 | `9ab8aa3d-93ef-46a4-b638-80db65c0748c` |
 
-![2026 daily cumulative returns for all eight strategies](images/benchmark-returns-2026.svg)
+![2026 daily cumulative returns for all ten strategies](images/benchmark-returns-2026.svg)
 
 Qwen 3.5 9B single-agent recorded portfolio `duplicate_signal_symbol` (4). Gemma 4 12B single-agent recorded portfolio `duplicate_signal_symbol` (3), portfolio `input_context_limit` (1).
 
@@ -49,8 +51,9 @@ Qwen 3.5 9B single-agent recorded portfolio `duplicate_signal_symbol` (4). Gemma
 | Gemma 4 12B single-agent | +21.65% | $121,651.11 | 22.49% | 71 | 51/52 | `6be847f1-9573-485e-baec-b2f6b66df9c5` |
 | Qwen 3.5 9B multi-agent | +15.48% | $115,484.40 | 14.32% | 117 | 47/52 | `3d6ab451-726a-4949-819c-f1a12b408d82` |
 | Gemma 4 12B multi-agent | +48.67% | $148,671.44 | 30.40% | 49 | 52/52 | `600ef7b8-54e1-40cd-89d4-dad78bbe7419` |
+| GPT-5.5 single-agent | +14.39% | $114,391.31 | 13.53% | 60 | 48/52 | `eb269f1f-bd68-4002-8548-499108e579fe` |
 
-![2025 daily cumulative returns for all eight strategies](images/benchmark-returns-2025.svg)
+![2025 daily cumulative returns for all nine strategies](images/benchmark-returns-2025.svg)
 
 Qwen 3.5 9B single-agent recorded portfolio `duplicate_signal_symbol` (5), portfolio `invalid_model_json` (2). Qwen 3.5 9B multi-agent skipped 5 scheduled weeks (no actionable candidates or holdings). Gemma 4 12B single-agent recorded portfolio `input_context_limit` (1).
 
@@ -66,8 +69,9 @@ Qwen 3.5 9B single-agent recorded portfolio `duplicate_signal_symbol` (5), portf
 | Gemma 4 12B single-agent | +47.24% | $147,242.63 | 15.20% | 60 | 51/52 | `e33e68b5-ba6d-408d-a22c-015c271fae99` |
 | Qwen 3.5 9B multi-agent | +29.83% | $129,825.23 | 14.90% | 101 | 48/52 | `a3fda12d-680f-40d2-9515-e702f496c296` |
 | Gemma 4 12B multi-agent | +51.62% | $151,624.39 | 16.94% | 47 | 52/52 | `622043f0-cb2f-4e32-813a-0b2b1f1f89a2` |
+| GPT-5.5 single-agent | +45.78% | $145,784.60 | 16.27% | 45 | 52/52 | `f9d4460c-3469-4729-8f60-e12b42443444` |
 
-![2024 daily cumulative returns for all eight strategies](images/benchmark-returns-2024.svg)
+![2024 daily cumulative returns for all nine strategies](images/benchmark-returns-2024.svg)
 
 Qwen 3.5 9B single-agent recorded portfolio `duplicate_signal_symbol` (5). Qwen 3.5 9B multi-agent recorded portfolio `duplicate_signal_symbol` (4). Gemma 4 12B single-agent recorded portfolio `input_context_limit` (1).
 
@@ -91,6 +95,12 @@ Analyst review improved return in 3 of six model/year comparisons. The six multi
 
 ## Conclusion
 
+Give the 2026 results the most weight when comparing models. Only that window falls entirely after both GPT-5.5’s December 1, 2025 knowledge cutoff and Gemma 4 12B’s January 2025 pretraining cutoff. Qwen3.5 9B’s model card does not specify a cutoff. [GPT-5.5 documentation](https://developers.openai.com/api/docs/models/gpt-5.5) · [Gemma model card](https://huggingface.co/google/gemma-4-12B-it#training-dataset) · [Qwen model card](https://huggingface.co/Qwen/Qwen3.5-9B)
+
 Across all three years, multi-agent Gemma and single-agent Qwen earned higher returns than their respective counterparts, with larger maximum drawdowns in both cases. Gemma’s multi-agent return advantage ranged from 1.19 percentage points in 2026 to 27.02 in 2025. Across all six comparisons, multi-agent runs used 3.1× as many model calls.
 
 Each comparison used one run per strategy on the same ten tickers. Repeated runs on held-out periods and other ticker universes would test whether the pattern persists.
+
+GPT-5.5 earned a lower return than both local single agents in all three windows. In 2025 it returned 14.39%, compared with 26.56% for Qwen and 21.65% for Gemma, while recording the smallest maximum drawdown of the three (13.53%). Across all three windows, GPT-5.5 validated all 141 weekly decisions it attempted, out of 147 scheduled weeks. In 2025 it validated 48 of 48 attempts. On April 11, April 17, April 25, and May 2, the portfolio held only cash and none of the ten tickers passed the entry screen, so the simulator skipped those four calls.
+
+In 2026, multi-agent review improved GPT-5.5’s return by 12.73 percentage points and increased maximum drawdown by 3.75 points. All 43 scheduled decisions validated. The run made 172 API calls without retries and cost an estimated $3.71 under its $10 cap, compared with $1.38 for the single-agent run. [Multi-agent configuration](../configs/benchmarks/price-only-multi-agent/2026-gpt-5.5.json)

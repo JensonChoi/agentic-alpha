@@ -8,6 +8,7 @@ from .contracts import Config
 from .data import load
 from .experiments import inputs, validate
 from .engine import simulate
+from .openai_budget import RequestBudget, current_budget
 
 def execute(id):
     with Session() as db:
@@ -40,7 +41,12 @@ def execute(id):
                 if not task.done():
                     task.cancel()
                     await asyncio.gather(task,return_exceptions=True)
-        result=asyncio.run(run_with_cancellation())
+        budget = RequestBudget(Session, id, config.api_budget_usd) if config.api_budget_usd is not None else None
+        token = current_budget.set(budget)
+        try:
+            result=asyncio.run(run_with_cancellation())
+        finally:
+            current_budget.reset(token)
         with Session() as db:
             e=db.scalar(select(Experiment).where(Experiment.id==id).with_for_update())
             if e is None or e.status=='canceled' or result.get('canceled'): return

@@ -1,0 +1,23 @@
+{
+  "2026": {
+    "baselines": {
+      "Qwen 3.5 9B single-agent": "27927ee9-5446-4283-9602-e1b14c85d9b7",
+      "Gemma 4 12B single-agent": "733925e2-c399-4f1b-a646-16142d1e223d"
+    },
+    "dataset_hash": "4e499948ca55fb741c23b38819b99d47a477ff4c69d624fc98b826d0d9ea3d27"
+  },
+  "2025": {
+    "baselines": {
+      "Qwen 3.5 9B single-agent": "cd4672d9-371f-4462-94e1-28fd1b2c97ec",
+      "Gemma 4 12B single-agent": "6be847f1-9573-485e-baec-b2f6b66df9c5"
+    },
+    "dataset_hash": "5629475fb7630de5ccb9be2a073ca5cd39b81c170636a6aae9a5f7e424dfe35d"
+  },
+  "2024": {
+    "baselines": {
+      "Qwen 3.5 9B single-agent": "cc6a7a6a-a940-41d7-bc5e-1ff5f03f5927",
+      "Gemma 4 12B single-agent": "e33e68b5-ba6d-408d-a22c-015c271fae99"
+    },
+    "dataset_hash": "5629475fb7630de5ccb9be2a073ca5cd39b81c170636a6aae9a5f7e424dfe35d"
+  }
+}
