@@ -65,11 +65,21 @@ def snapshot(config, history, manifest, portfolio, curve, day):
     bars = history[history.ticker.isin(allowed)].sort_values('date').groupby('ticker').tail(100).copy()
     bars['date'] = bars.date.astype(str)
     peak = max([config.initial_capital]+[x['equity'] for x in curve])
-    context = dict(version=1, cutoff=cutoff, entries=entries, holdings=holdings, screening=screening, indicators={t:v for t,v in indicators.items() if t in allowed}, portfolio=portfolio, rules=config.model_dump(mode='json', exclude={'api_budget_usd'}), risk=dict(drawdown=portfolio['equity']/peak-1, exposure=1-portfolio['cash']/portfolio['equity'], sector_status='missing', candidate_weight_limit=config.max_position_weight), input_hash=manifest.get('content_sha256', manifest.get('sha256')), missing_inputs=['sectors'], evidence_refs=['snapshot'])
+    rules = config.model_dump(mode='json', exclude={'api_budget_usd'})
+    if not config.position_weight_overrides:
+        del rules['position_weight_overrides']
+    context = dict(version=1, cutoff=cutoff, entries=entries, holdings=holdings, screening=screening, indicators={t:v for t,v in indicators.items() if t in allowed}, portfolio=portfolio, rules=rules, risk=dict(drawdown=portfolio['equity']/peak-1, exposure=1-portfolio['cash']/portfolio['equity'], sector_status='missing', candidate_weight_limit=config.max_position_weight), input_hash=manifest.get('content_sha256', manifest.get('sha256')), missing_inputs=['sectors'], evidence_refs=['snapshot'])
     context['_bars'] = bars[['date','ticker','close']].to_dict('records')
     context['price_basis'] = 'USD closes adjusted for splits through cutoff only'
-    context['risk']['candidate_scenarios'] = {t: dict(target_weight=min(config.max_position_weight,config.max_exposure), target_value=portfolio['equity']*min(config.max_position_weight,config.max_exposure), current_value=holdings.get(t,0)*indicators[t]['close']) for t in entries}
+    context['risk']['candidate_scenarios'] = {}
+    for ticker in entries:
+        target = min(config.position_weight_limit(ticker), config.max_exposure)
+        context['risk']['candidate_scenarios'][ticker] = dict(target_weight=target, target_value=portfolio['equity']*target,
+                                                            current_value=holdings.get(ticker, 0)*indicators[ticker]['close'])
     context['risk']['missing_inputs'] = ['sectors', 'fundamental risk metrics unless retrieved']
+    if config.position_weight_overrides:
+        held = holding_facts(context)
+        context['risk']['trim_candidates'] = sorted(ticker for ticker, facts in held.items() if facts['above_target'])
     context['_evidence'] = manifest.get('agent_evidence', [])
     context['snapshot_hash'] = digest(context)
     return context
@@ -78,15 +88,19 @@ def snapshot(config, history, manifest, portfolio, curve, day):
 def holding_facts(context: dict) -> dict:
     """Value held shares with the same cutoff marks used for portfolio equity."""
     portfolio = context['portfolio']
-    cap = context['rules']['max_position_weight']
+    rules = context['rules']
+    overrides = rules.get('position_weight_overrides', {})
     facts = {}
     for ticker, quantity in context['holdings'].items():
+        cap = overrides.get(ticker, rules['max_position_weight'])
         mark = portfolio.get('prices', {}).get(ticker)
         value = quantity * mark if mark is not None else None
         weight = value / portfolio['equity'] if value is not None and portfolio['equity'] > 0 else None
         above_target = None if weight is None else weight > cap and not isclose(weight, cap, rel_tol=0, abs_tol=1e-12)
         facts[ticker] = dict(quantity_shares=quantity, mark_price_usd=mark, market_value_usd=value,
                              weight_fraction=weight, above_target=above_target)
+        if overrides:
+            facts[ticker]['position_weight_limit'] = cap
     return facts
 
 

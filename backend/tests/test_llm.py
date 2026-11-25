@@ -504,3 +504,96 @@ def test_price_review_holding_units(quantity, mark, equity, weight, above):
     assert facts['DIS'] == dict(quantity_shares=quantity, mark_price_usd=mark,
                                 market_value_usd=None if mark is None else quantity * mark,
                                 weight_fraction=weight, above_target=above)
+
+
+@pytest.mark.parametrize(('ticker', 'target', 'accepted'), [
+    ('VOO', .20, True), ('QQQ', .20, True), ('AAPL', .05, True),
+    ('VOO', .21, False), ('QQQ', .21, False), ('AAPL', .06, False),
+])
+async def test_price_only_position_overrides_in_proposals(monkeypatch, ticker, target, accepted):
+    config = Config(strategy='single_agent', model='mock', price_only=True,
+                    universe=['VOO', 'QQQ', 'AAPL'], max_position_weight=.05,
+                    position_weight_overrides={'VOO': .20, 'QQQ': .20})
+    frame, manifest = fixture()
+    frame = pd.concat([frame, frame[frame.ticker == 'VOO'].assign(ticker='QQQ')])
+    day = pd.Timestamp('2024-04-05')
+    portfolio = dict(cash=100000, equity=100000, positions={})
+    context = snapshot(config, frame[frame.date <= day], manifest, portfolio, [portfolio], day)
+    assert context['risk']['candidate_scenarios'][ticker]['target_weight'] == config.position_weight_limit(ticker)
+
+    async def fake(*args):
+        output = final(ticker)
+        output.final.signals[0].target_weight = target
+        return output, {}
+
+    monkeypatch.setattr('app.inference.call', fake)
+    signals, trace = await evaluate(config, context)
+    assert bool(signals) is accepted
+    if not accepted:
+        assert any(record.get('error_code') == 'buy_weight_above_cap' for record in trace)
+
+
+async def test_position_override_fills_and_trims_across_open(monkeypatch):
+    from app.engine import simulate
+
+    config = Config(strategy='single_agent', model='mock', price_only=True, rebalance='daily',
+                    start='2024-04-01', end='2024-04-05', universe=['VOO', 'QQQ', 'AAPL'],
+                    max_position_weight=.05, fee=1, position_weight_overrides={'VOO': .20, 'QQQ': .20})
+    frame, manifest = fixture()
+    frame = pd.concat([frame, frame[frame.ticker == 'VOO'].assign(ticker='QQQ')])
+    for ticker, open_price in [('VOO', 200), ('QQQ', 100)]:
+        frame.loc[(frame.date == pd.Timestamp('2024-04-02')) & (frame.ticker == ticker), 'close'] = 200
+        frame.loc[(frame.date == pd.Timestamp('2024-04-03')) & (frame.ticker == ticker), 'open'] = open_price
+
+    def buy(ticker, weight):
+        return Signal(ticker=ticker, action='BUY', target_weight=weight, rationale='Fixture')
+
+    async def propose(config, context):
+        day = context['portfolio']['date']
+        if day == '2024-04-01':
+            return [buy('VOO', .20), buy('QQQ', .20), buy('AAPL', .06)], []
+        if day == '2024-04-02':
+            assert context['risk']['trim_candidates'] == ['QQQ', 'VOO']
+            return [buy('VOO', .20), buy('QQQ', .20)], []
+        if day == '2024-04-03':
+            return [Signal(ticker='VOO', action='SELL', rationale='Fixture'), buy('AAPL', .05)], []
+        return [], []
+
+    monkeypatch.setattr('app.engine.evaluate', propose)
+    result = await simulate(config, frame, manifest)
+    assert [(fill['date'], fill['ticker'], fill['quantity'] > 0) for fill in result['trades']] == [
+        ('2024-04-02', 'VOO', True), ('2024-04-02', 'QQQ', True),
+        ('2024-04-03', 'VOO', False), ('2024-04-04', 'VOO', False), ('2024-04-04', 'AAPL', True),
+    ]
+    assert {order['reason'] for order in result['orders'] if order['status'] == 'rejected'} == {
+        'Position or exposure limit', 'Reduction no longer needed at open',
+    }
+    cash = config.initial_capital
+    shares = {}
+    open_prices = frame[frame.date == pd.Timestamp('2024-04-02')].set_index('ticker')['open']
+    for fill in result['trades'][:2]:
+        cash -= fill['quantity'] * fill['price'] + fill['fee']
+        shares[fill['ticker']] = fill['quantity']
+        values = {ticker: qty * open_prices[ticker] for ticker, qty in shares.items()}
+        assert values[fill['ticker']] / (cash + sum(values.values())) == pytest.approx(.20, abs=1e-12)
+
+
+async def test_position_override_allows_proposing_trim_outside_entry_shortlist(monkeypatch):
+    c, _ = setup(price_only=True, max_candidates=1, max_position_weight=.05,
+                 position_weight_overrides={'VOO': .20})
+    frame, manifest = fixture()
+    day = pd.Timestamp('2024-04-05')
+    portfolio = dict(cash=70000, equity=100000, positions={'VOO': 200}, prices={'VOO': 150})
+    context = snapshot(c, frame[frame.date <= day], manifest, portfolio, [portfolio], day)
+    assert context['entries'] == ['AAPL']
+    assert context['risk']['trim_candidates'] == ['VOO']
+
+    async def fake(*args):
+        output = final('VOO')
+        output.final.signals[0].target_weight = .20
+        return output, {}
+
+    monkeypatch.setattr('app.inference.call', fake)
+    signals, trace = await evaluate(c, context)
+    assert trace[-1]['status'] == 'completed'
+    assert [(signal.ticker, signal.target_weight) for signal in signals] == [('VOO', .20)]

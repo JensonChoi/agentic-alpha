@@ -62,6 +62,7 @@ def metrics(curve, fills, capital):
 
 async def simulate(c, frame, manifest, checkpoint=None, resume=None):
     ledger=Ledger(c.initial_capital); curve=[]; decisions=[]; orders=[]; pending=[]; prices={}; bullish=set(); seen=set(); failures=0; active=set(); copied=set(); disclosure_audit=[]; pending_decision_id=None
+    pending_reductions: set[str] = set()
     normalized = c.strategy=='congressional' and bool(c.disclosure_snapshot)
     records, skipped = selected_records(c, manifest.get('disclosures', [])) if normalized else ([], [])
     disclosure_audit.extend(skipped)
@@ -79,6 +80,7 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
         ledger.fills=resume['trades']; ledger.ids={f['id'] for f in ledger.fills}
         curve=resume['equity']; decisions=resume['decisions']; orders=resume['orders']
         state=resume.get('state',{}); pending_decision_id=state.get('pending_decision_id'); pending=[Signal(**s) for s in state.get('pending',[])]
+        pending_reductions = set(state.get('pending_reductions', []))
         if ledger.fills and 'accounting' not in state: raise ValueError('Legacy checkpoint lacks exact FIFO state; create a new experiment')
         ledger.restore_accounting(state.get('accounting',{}))
         active=set(state.get('active',[])); copied=set(state.get('copied',[])); disclosure_audit=state.get('disclosure_audit',skipped)
@@ -157,7 +159,8 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
         for ticker, cash in reinvest.items():
             if any(s.ticker==ticker and s.action=='SELL' for s in pending): continue
             if ticker in opens and equity>0:
-                weight = min(cap, float((ledger.positions.get(ticker,D(0))*D(opens[ticker])+cash)/equity))
+                limit = c.position_weight_limit(ticker) if c.position_weight_overrides else cap
+                weight = min(limit, float((ledger.positions.get(ticker,D(0))*D(opens[ticker])+cash)/equity))
                 pending.append(Signal(ticker=ticker,action='BUY',target_weight=weight,rationale='Ex-date dividend reinvestment approximation'))
         def reducing(signal):
             return signal.action=='SELL' or (signal.ticker in opens and equity*D(signal.target_weight)<ledger.positions.get(signal.ticker,D(0))*D(opens[signal.ticker]))
@@ -166,11 +169,15 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
             if pending_decision_id: record['decision_id']=pending_decision_id
             orders.append(record)
             if s.ticker not in (active | set(ledger.positions) if normalized and c.strategy=='congressional' else set(c.universe)): record['reason']='Symbol outside universe'; continue
-            if s.target_weight>cap or s.target_weight>c.max_exposure: record['reason']='Position or exposure limit'; continue
+            limit = c.position_weight_limit(s.ticker) if c.position_weight_overrides else cap
+            if s.target_weight>limit or s.target_weight>c.max_exposure: record['reason']='Position or exposure limit'; continue
             if s.ticker not in opens: record.update(status='unfilled',reason='Missing opening price'); continue
             if s.action=='HOLD': record.update(status='held'); continue
             weight=s.target_weight if s.action=='BUY' else 0
             is_reduction = reducing(s) and s.rationale!='Ex-date dividend reinvestment approximation'
+            if s.action == 'BUY' and s.ticker in pending_reductions and not is_reduction:
+                record['reason'] = 'Reduction no longer needed at open'
+                continue
             px=D(opens[s.ticker])*(1+D(c.slippage_bps)/10000*(-1 if is_reduction else 1))
             current=ledger.positions.get(s.ticker,D(0)); target=equity*D(weight)/D(opens[s.ticker]); qty=target-current
             if s.action=='BUY' and not is_reduction:
@@ -179,6 +186,15 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
                 budget=max(D(0),min(ledger.cash-D(c.fee),equity*D(c.max_exposure)-exposure))
                 if s.rationale=='Ex-date dividend reinvestment approximation': budget=min(budget,max(D(0),reinvest[s.ticker]-D(c.fee)))
                 qty=min(max(D(0),qty),budget/px)
+                if c.position_weight_overrides and qty:
+                    # Mark at the opening price after allowing for the fee and slippage from this fill.
+                    opening_price = D(opens[s.ticker])
+                    position_limit = D(limit)
+                    room = position_limit * (ledger.equity(mark) - D(c.fee)) - current * opening_price
+                    qty = min(qty, max(D(0), room / (opening_price + position_limit * (px - opening_price))))
+                    if not qty:
+                        record['reason'] = 'Position or exposure limit'
+                        continue
             elif s.action=='SELL': qty=-current
             else: qty=min(D(0),qty)
             if not qty: record['reason']='No executable quantity'; continue
@@ -196,6 +212,7 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
                 mask=(history.ticker==action['ticker']) & (history.date<pd.Timestamp(action['date']))
                 history.loc[mask,'close'] /= action['ratio']
         signals=[]; trace=[]; reason=''
+        pending_reductions = set()
         if c.strategy=='congressional' and not normalized:
             eligible=[]
             for d in manifest.get('disclosures',[]):
@@ -229,11 +246,16 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
             if rebalance:
                 selected=sorted(bullish)[:c.max_positions]
                 if c.strategy=='momentum':
-                    signals=[Signal(ticker=t,action='BUY' if t in selected else 'SELL',target_weight=min(cap,c.max_exposure/max(1,len(selected))) if t in selected else 0,rationale='Completed-bar moving-average crossover state') for t in sorted(set(selected)|{t for t,q in ledger.positions.items() if q})]
+                    equal_weight = c.max_exposure / max(1, len(selected))
+                    signals = [Signal(ticker=t, action='BUY' if t in selected else 'SELL',
+                                      target_weight=min(c.position_weight_limit(t), equal_weight) if t in selected else 0,
+                                      rationale='Completed-bar moving-average crossover state')
+                               for t in sorted(set(selected) | {t for t, q in ledger.positions.items() if q})]
                 else:
                     try:
                         context=snapshot(c,history,manifest,curve[-1],curve,day)
                         signals,trace=await evaluate(c,context)
+                        pending_reductions = set(context['risk'].get('trim_candidates', []))
                         if any(t.get('role')=='audit' and t.get('status')=='failed' for t in trace):
                             failures+=1; reason='Model decision failed; no action'
                     except Exception as exc: failures+=1; reason='Model failure: '+type(exc).__name__+'; no action'
@@ -242,10 +264,14 @@ async def simulate(c, frame, manifest, checkpoint=None, resume=None):
         pending=signals
         pending_decision_id=stamp if signals else None
         state=dict(pending_decision_id=pending_decision_id,exact_positions={t:str(q) for t,q in ledger.positions.items()},exact_cash=str(ledger.cash),pending=[s.model_dump() for s in pending],prices=prices,bullish=sorted(bullish),seen=sorted(seen),accounting=ledger.accounting_state(),active=sorted(active),copied=sorted(copied),disclosure_audit=disclosure_audit)
+        if pending_reductions:
+            state['pending_reductions'] = sorted(pending_reductions)
         partial=dict(cash_interest=str(interest_total),equity=curve,trades=ledger.fills,orders=orders,decisions=decisions,cash=str(ledger.cash),positions={t:str(q) for t,q in ledger.positions.items()},state=state,failures=failures)
         if checkpoint and not checkpoint((index+1)/len(dates),partial): return dict(canceled=True)
     if c.mode=='historical': orders.extend(dict(date=None,signal=s.model_dump(),status='unfilled',reason='No subsequent session in experiment') for s in pending)
     result=dict(state=dict(pending_decision_id=pending_decision_id,exact_positions={t:str(q) for t,q in ledger.positions.items()},exact_cash=str(ledger.cash),pending=[s.model_dump() for s in pending],prices=prices,bullish=sorted(bullish),seen=sorted(seen),accounting=ledger.accounting_state(),active=sorted(active),copied=sorted(copied),disclosure_audit=disclosure_audit),equity=curve,trades=ledger.fills,orders=orders,decisions=decisions,metrics=metrics(curve,ledger.fills,c.initial_capital),cash=float(ledger.cash),positions={t:float(q) for t,q in ledger.positions.items()},provenance=manifest,failures=failures)
+    if pending_reductions:
+        result['state']['pending_reductions'] = sorted(pending_reductions)
     from .analytics import trading_metrics
     result['metrics'].update(trading_metrics(ledger.fills,curve,decisions))
     result['metrics'].update(realized_pnl=float(ledger.realized), trade_win_rate=sum(p>0 for p in ledger.profits)/len(ledger.profits) if ledger.profits else None, average_holding_days=sum(ledger.holding_days)/len(ledger.holding_days) if ledger.holding_days else None)
