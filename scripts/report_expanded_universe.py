@@ -10,6 +10,7 @@ LABELS = {
     'gemma-single': 'Gemma 4 12B single-agent',
     'gemma-multi': 'Gemma 4 12B multi-agent',
     'gpt55-single': 'GPT-5.5 single-agent',
+    'gpt55-multi': 'GPT-5.5 multi-agent',
 }
 
 
@@ -93,9 +94,10 @@ def publish(root: Path, reports: Path) -> None:
             measured = stats['billing']
             spent = smoke['priced_usd'] + measured['priced_usd']
             reserved = smoke['spent_or_reserved_usd'] + measured['spent_or_reserved_usd']
+            campaign_cap = smoke['spent_or_reserved_usd'] + measured['limit_usd']
             details.extend([
                 f'GPT-5.5 priced usage was ${spent:.4f} across smoke and measured runs. '
-                f'Spend plus unsettled reservations was ${reserved:.4f} of the $5.00 campaign cap. '
+                f'Spend plus unsettled reservations was ${reserved:.4f} of the ${campaign_cap:.2f} campaign cap. '
                 f"The cap limited {len(stats['budget_blocked_weeks'])} measured weeks. "
                 f"[API pricing]({measured['pricing']['source']})", '',
             ])

@@ -27,6 +27,7 @@ The passive baseline reuses the original 2026 VOO buy-and-hold experiment. [Orig
 | Gemma 4 12B single-agent (16,384 context tokens) | +9.49% | $109,488.49 | 15.01% | 80.0% | 108 | 41/43 | `9d34bbba-6703-4efa-95a6-c36741dd7d0d` |
 | Gemma 4 12B multi-agent | +6.12% | $106,119.37 | 9.31% | 47.5% | 242 | 43/43 | `dd0d5097-e169-4f1e-b16c-787ee05fed11` |
 | GPT-5.5 single-agent | +10.76% | $110,764.36 | 15.70% | 87.9% | 50 | 43/43 | `d471d2fd-5b91-4831-810c-a7ef04713984` |
+| GPT-5.5 multi-agent | +21.41% | $121,410.10 | 10.20% | 88.7% | 61 | 43/43 | `fee3c8d2-ecfc-46a8-ae2a-345ab3598bf5` |
 
 ## Portfolio and inference audit
 
@@ -67,3 +68,11 @@ Peak holdings were 20. There were 208 closes with holdings above their weight ca
 The run recorded 43 model calls, 0 skipped weeks, and 6.4 seconds per scheduled decision on average. Recorded inference errors were none. Reported token usage was 278,660 input tokens, 19,815 output tokens, 2,816 cached input tokens.
 
 GPT-5.5 priced usage was $2.0651 across smoke and measured runs. Spend plus unsettled reservations was $2.0651 of the $5.00 campaign cap. The cap limited 0 measured weeks. [API pricing](https://developers.openai.com/api/docs/models/gpt-5.5)
+
+### GPT-5.5 multi-agent
+
+Peak holdings were 20. There were 208 closes with holdings above their weight caps. Allocation-related order rejections were Maximum positions (20). Tickers traded among RKLB, PLTR, and COIN were RKLB, PLTR.
+
+The run recorded 172 model calls, 0 skipped weeks, and 22.9 seconds per scheduled decision on average. Recorded inference errors were none. Reported token usage was 781,329 input tokens, 84,052 output tokens, 3,584 cached input tokens.
+
+GPT-5.5 priced usage was $6.7523 across smoke and measured runs. Spend plus unsettled reservations was $6.7523 of the $10.00 campaign cap. The cap limited 0 measured weeks. [API pricing](https://developers.openai.com/api/docs/models/gpt-5.5)
