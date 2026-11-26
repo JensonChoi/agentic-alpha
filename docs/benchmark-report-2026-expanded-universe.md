@@ -29,7 +29,33 @@ The passive baseline reuses the original 2026 VOO buy-and-hold experiment. [Orig
 | GPT-5.5 single-agent | +10.76% | $110,764.36 | 15.70% | 87.9% | 50 | 43/43 | `d471d2fd-5b91-4831-810c-a7ef04713984` |
 | GPT-5.5 multi-agent | +21.41% | $121,410.10 | 10.20% | 88.7% | 61 | 43/43 | `fee3c8d2-ecfc-46a8-ae2a-345ab3598bf5` |
 
-## Portfolio and inference audit
+## Discussion
+
+The comparison pairs the same strategies over the 2026 window ending October 30. Return changes are in percentage points and use the percentages shown in the table. [Original 10-ticker results](benchmark-report.md#2026)
+
+| Strategy | 10-ticker return | 30-ticker return | Return change (pp) | 10-ticker max drawdown | 30-ticker max drawdown |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Momentum (20/50 sessions) | -6.30% | +4.86% | +11.16 | 11.74% | 13.01% |
+| Qwen 3.5 9B single-agent | +26.52% | +10.69% | -15.83 | 15.51% | 11.01% |
+| Qwen 3.5 9B multi-agent | +1.81% | +6.90% | +5.09 | 11.26% | 9.47% |
+| Gemma 4 12B single-agent | +11.13% | +9.49% | -1.64 | 11.46% | 15.01% |
+| Gemma 4 12B multi-agent | +12.33% | +6.12% | -6.21 | 16.67% | 9.31% |
+| GPT-5.5 single-agent | -4.56% | +10.76% | +15.32 | 14.51% | 15.70% |
+| GPT-5.5 multi-agent | +8.17% | +21.41% | +13.24 | 18.26% | 10.20% |
+
+Returns improved for 3 of 6 LLM strategies in the 30-ticker configuration. The shared VOO buy-and-hold baseline returned +11.04%.
+
+GPT-5.5 multi-agent went from +8.17% to +21.41% in return and from 18.26% to 10.20% in maximum drawdown. It validated 43 of 43 decisions in the expanded run and averaged 88.7% exposure.
+
+The 10-ticker portfolios could hold up to 10 positions at 20% per ticker. The 30-ticker portfolios could hold up to 20, with 20% caps for VOO and QQQ and 5% caps elsewhere. Some agents also ran with different context budgets and call timeouts. The results measure the combined configuration changes over one retrospectively selected window.
+
+## Conclusion
+
+GPT-5.5 multi-agent led the reported 30-ticker LLM strategies and finished +10.37 percentage points relative to VOO buy and hold. Its maximum drawdown was 10.20%, versus 8.89% for VOO.
+
+This benchmark leaves the effect of universe size on its own unresolved. A follow-up would vary the ticker universe while holding allocation and inference settings fixed and repeat the comparison on a held-out period.
+
+## Appendix: Portfolio and inference audit
 
 ### Momentum (20/50 sessions)
 

@@ -13,6 +13,85 @@ LABELS = {
     'gpt55-multi': 'GPT-5.5 multi-agent',
 }
 
+# Return and maximum drawdown in percent from the original report's 2026 table.
+TEN_TICKER_RESULTS = {
+    'momentum': (-6.30, 11.74),
+    'qwen-single': (26.52, 15.51),
+    'qwen-multi': (1.81, 11.26),
+    'gemma-single': (11.13, 11.46),
+    'gemma-multi': (12.33, 16.67),
+    'gpt55-single': (-4.56, 14.51),
+    'gpt55-multi': (8.17, 18.26),
+}
+VOO_RETURN = 11.04
+VOO_DRAWDOWN = 8.89
+
+
+def discussion(results: dict[str, dict]) -> list[str]:
+    lines = [
+        '## Discussion',
+        '',
+        'The comparison pairs the same strategies over the 2026 window ending October 30. '
+        'Return changes are in percentage points and use the percentages shown in the table. '
+        '[Original 10-ticker results](benchmark-report.md#2026)',
+        '',
+        '| Strategy | 10-ticker return | 30-ticker return | Return change (pp) | 10-ticker max drawdown | 30-ticker max drawdown |',
+        '| --- | ---: | ---: | ---: | ---: | ---: |',
+    ]
+    changes = {}
+    for key, (previous_return, previous_drawdown) in TEN_TICKER_RESULTS.items():
+        if key not in results:
+            continue
+        current_return = round(results[key]['total_return'] * 100, 2)
+        current_drawdown = abs(results[key]['drawdown']) * 100
+        changes[key] = current_return - previous_return
+        lines.append(f'| {LABELS[key]} | {previous_return:+.2f}% | {current_return:+.2f}% | '
+                     f'{changes[key]:+.2f} | {previous_drawdown:.2f}% | {current_drawdown:.2f}% |')
+
+    agent_changes = [change for key, change in changes.items() if key != 'momentum']
+    if agent_changes:
+        improved = sum(change > 0 for change in agent_changes)
+        lines.extend(['', f'Returns improved for {improved} of {len(agent_changes)} LLM strategies in the 30-ticker configuration. '
+                      f'The shared VOO buy-and-hold baseline returned {VOO_RETURN:+.2f}%.'])
+    if 'gpt55-multi' in changes:
+        stats = results['gpt55-multi']
+        previous_return, previous_drawdown = TEN_TICKER_RESULTS['gpt55-multi']
+        lines.extend(['', f"GPT-5.5 multi-agent went from {previous_return:+.2f}% to {stats['total_return']:+.2%} in return "
+                      f"and from {previous_drawdown:.2f}% to {abs(stats['drawdown']):.2%} in maximum drawdown. "
+                      f"It validated {stats['accepted']} of {stats['scheduled']} decisions in the expanded run and "
+                      f"averaged {stats['mean_exposure']:.1%} exposure."])
+    lines.extend([
+        '',
+        'The 10-ticker portfolios could hold up to 10 positions at 20% per ticker. '
+        'The 30-ticker portfolios could hold up to 20, with 20% caps for VOO and QQQ and 5% caps elsewhere. '
+        'Some agents also ran with different context budgets and call timeouts. '
+        'The results measure the combined configuration changes over one retrospectively selected window.',
+        '',
+    ])
+    return lines
+
+
+def conclusion(results: dict[str, dict]) -> list[str]:
+    lines = ['## Conclusion', '']
+    agents = {key: stats for key, stats in results.items() if key != 'momentum'}
+    if agents:
+        leader = max(agents, key=lambda key: agents[key]['total_return'])
+        stats = agents[leader]
+        lead = round(stats['total_return'] * 100, 2) - VOO_RETURN
+        lines.extend([
+            f"{LABELS[leader]} led the reported 30-ticker LLM strategies and finished {lead:+.2f} percentage points "
+            f"relative to VOO buy and hold. Its maximum drawdown was {abs(stats['drawdown']):.2%}, "
+            f"versus {VOO_DRAWDOWN:.2f}% for VOO.",
+            '',
+        ])
+    lines.extend([
+        'This benchmark leaves the effect of universe size on its own unresolved. '
+        'A follow-up would vary the ticker universe while holding allocation and inference settings fixed '
+        'and repeat the comparison on a held-out period.',
+        '',
+    ])
+    return lines
+
 
 def publish(root: Path, reports: Path) -> None:
     output = reports.with_name(f'{reports.name}-30-tickers-20-positions')
@@ -39,9 +118,10 @@ def publish(root: Path, reports: Path) -> None:
         'The passive baseline reuses the original 2026 VOO buy-and-hold experiment. [Original benchmark report](benchmark-report.md#2026)', '',
         '| Strategy | Return | Final equity | Max drawdown | Avg. exposure | Fills | Validated weeks | Experiment |',
         '| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |',
-        '| VOO buy and hold | +11.04% | $111,038.44 | 8.89% | 99.7% | 1 | — | `157861d6-8a27-4459-bd03-66013269e233` |',
+        f'| VOO buy and hold | {VOO_RETURN:+.2f}% | $111,038.44 | {VOO_DRAWDOWN:.2f}% | 99.7% | 1 | — | `157861d6-8a27-4459-bd03-66013269e233` |',
     ]
     details = []
+    results = {}
     runs = {key: [(output / key, None)] for key in LABELS}
     for context_dir in sorted(output.glob('context-*')):
         tokens = int(context_dir.name.removeprefix('context-'))
@@ -65,6 +145,7 @@ def publish(root: Path, reports: Path) -> None:
             continue
 
         stats = json.loads(path.read_text())
+        results[key] = stats
         if tokens is not None:
             timeout = stats.get('call_timeout')
             settings = f', {timeout:g}s call timeout' if timeout is not None else ''
@@ -101,8 +182,9 @@ def publish(root: Path, reports: Path) -> None:
                 f"The cap limited {len(stats['budget_blocked_weeks'])} measured weeks. "
                 f"[API pricing]({measured['pricing']['source']})", '',
             ])
-    if details:
-        report.extend(['', '## Portfolio and inference audit', '', *details])
+    if results:
+        report.extend(['', *discussion(results), *conclusion(results),
+                       '## Appendix: Portfolio and inference audit', '', *details])
     path = root / 'docs/benchmark-report-2026-expanded-universe.md'
     staged = path.with_suffix('.staged')
     staged.write_text('\n'.join(report).rstrip() + '\n')
