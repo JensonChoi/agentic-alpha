@@ -31,8 +31,12 @@ def run(config: Config, folder: Path, stage: str) -> dict:
         save(id_path, identifier)
     with Session() as db:
         row = db.get(Experiment, identifier)
-        if row is None or Config.model_validate(row.config) != config:
+        saved_config = Config.model_validate(row.config) if row is not None else None
+        # Keep the inference settings recorded when an existing benchmark stage was created.
+        inference_settings = {'context_tokens', 'call_timeout'}
+        if saved_config is None or saved_config.model_dump(exclude=inference_settings) != config.model_dump(exclude=inference_settings):
             raise ValueError(f'Configuration mismatch for {folder.name} {stage}')
+        config = saved_config
         finished = row.status in FINISHED
         if not finished:
             if row.status not in {'created', 'running', 'failed'}:
@@ -75,12 +79,17 @@ def run(config: Config, folder: Path, stage: str) -> dict:
     return stats
 
 
-def run_campaign(through: str, config_dir: Path = CONFIGS, *, momentum: bool = False) -> None:
-    keys = RUNS[:RUNS.index(through) + 1]
+def run_campaign(through: str | None, config_dir: Path = CONFIGS, *, momentum: bool = False,
+                 single_agent_context: int | None = None) -> None:
+    keys = ('qwen-single', 'gemma-single') if single_agent_context is not None else RUNS[:RUNS.index(through) + 1]
     if momentum:
         keys += ('momentum',)
     configs = {key: Config.model_validate_json((config_dir / f'{key}.json').read_text())
                for key in keys}
+    if single_agent_context is not None:
+        configs = {key: Config.model_validate({**config.model_dump(), 'context_tokens': single_agent_context,
+                                               'name': f'{config.name}, {single_agent_context} context tokens'})
+                   for key, config in configs.items()}
     reference = configs['qwen-single']
     max_positions = reference.max_positions
     if any((config.universe, config.dataset, config.max_positions) != (reference.universe, reference.dataset, max_positions)
@@ -89,6 +98,8 @@ def run_campaign(through: str, config_dir: Path = CONFIGS, *, momentum: bool = F
     ticker_suffix = '' if len(reference.universe) == 27 else f'-{len(reference.universe)}-tickers'
     position_suffix = '' if max_positions == 15 else f'-{max_positions}-positions'
     output = OUTPUT.with_name(f'{OUTPUT.name}{ticker_suffix}{position_suffix}')
+    if single_agent_context is not None:
+        output = output / f'context-{single_agent_context}'
     for key, config in configs.items():
         folder = output / key
         if key == 'momentum':
@@ -114,7 +125,9 @@ def run_campaign(through: str, config_dir: Path = CONFIGS, *, momentum: bool = F
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--through', choices=RUNS, required=True)
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument('--through', choices=RUNS)
+    selection.add_argument('--single-agent-context', type=int, help='Rerun Qwen and Gemma single-agent at this context size')
     parser.add_argument('--config-dir', type=Path, default=CONFIGS)
     parser.add_argument('--momentum', action='store_true', help='Run the momentum baseline after the multi-agent runs')
     parser.add_argument('--wait-for-current', action='store_true', help='Wait for the active campaign before continuing')
@@ -129,7 +142,8 @@ def main() -> None:
             fcntl.flock(lock, fcntl.LOCK_EX if args.wait_for_current else fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise SystemExit('The expanded-universe benchmark is already running.') from None
-        run_campaign(args.through, args.config_dir, momentum=args.momentum)
+        run_campaign(args.through, args.config_dir, momentum=args.momentum,
+                     single_agent_context=args.single_agent_context)
 
 
 if __name__ == '__main__':

@@ -41,8 +41,19 @@ def publish(root: Path, reports: Path) -> None:
         '| VOO buy and hold | +11.04% | $111,038.44 | 8.89% | 99.7% | 1 | — | `157861d6-8a27-4459-bd03-66013269e233` |',
     ]
     details = []
-    for key, label in LABELS.items():
-        folder = output / key
+    runs = {key: [(output / key, None)] for key in LABELS}
+    for context_dir in sorted(output.glob('context-*')):
+        tokens = int(context_dir.name.removeprefix('context-'))
+        for key in ('qwen-single', 'gemma-single'):
+            folder = context_dir / key
+            runs[key].extend((candidate, tokens) for candidate in [folder, *sorted(folder.glob('repeat-*'))]
+                             if (candidate / '2026-audit.json').is_file())
+    for key, candidates in runs.items():
+        completed = [(folder, tokens) for folder, tokens in candidates if (folder / '2026-audit.json').is_file()]
+        # The experiment ID is written once, while an audit can be regenerated.
+        folder, tokens = max(completed, key=lambda run: (run[0] / '2026.id').stat().st_mtime_ns,
+                             default=candidates[0])
+        label = LABELS[key]
         path = folder / '2026-audit.json'
         id_path = folder / '2026.id'
         if not path.exists():
@@ -53,6 +64,10 @@ def publish(root: Path, reports: Path) -> None:
             continue
 
         stats = json.loads(path.read_text())
+        if tokens is not None:
+            timeout = stats.get('call_timeout')
+            settings = f', {timeout:g}s call timeout' if timeout is not None else ''
+            label = f'{label} ({tokens:,} context tokens{settings})'
         validated = '—' if key == 'momentum' else f"{stats['accepted']}/{stats['scheduled']}"
         report.append(f"| {label} | {stats['total_return']:+.2%} | ${stats['equity']:,.2f} | "
                       f"{abs(stats['drawdown']):.2%} | {stats['mean_exposure']:.1%} | {stats['fills']} | "

@@ -100,7 +100,7 @@ async def test_adapter_settings_and_redaction(monkeypatch,model,provider):
     output,meta=await call(c,'portfolio',{'evidence_refs':['snapshot']})
     assert 'SECRET' not in json.dumps(meta)+output.model_dump_json()
     assert captured[0]['model']==model
-    if provider=='ollama': assert captured[0]['options']['seed']==42 and captured[0]['options']['num_ctx']==8192
+    if provider=='ollama': assert captured[0]['options']['seed']==42 and captured[0]['options']['num_ctx']==16384
     else: assert captured[0]['seed']==42
 
 async def test_synthetic_execution_resume(monkeypatch):

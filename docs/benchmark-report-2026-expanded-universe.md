@@ -22,9 +22,9 @@ The passive baseline reuses the original 2026 VOO buy-and-hold experiment. [Orig
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | VOO buy and hold | +11.04% | $111,038.44 | 8.89% | 99.7% | 1 | — | `157861d6-8a27-4459-bd03-66013269e233` |
 | Momentum (20/50 sessions) | +4.86% | $104,859.98 | 13.01% | 82.1% | 775 | — | `7aa388dd-8994-4312-8aaf-57d508f68258` |
-| Qwen 3.5 9B single-agent | +17.45% | $117,451.78 | 12.84% | 82.9% | 196 | 34/43 | `8a84bf27-ed85-4f92-8916-523f307a7fac` |
+| Qwen 3.5 9B single-agent (16,384 context tokens, 180s call timeout) | +10.69% | $110,685.14 | 11.01% | 70.1% | 212 | 40/43 | `6fb4647c-734e-40fc-b9a6-3f825ff02410` |
 | Qwen 3.5 9B multi-agent | +6.90% | $106,898.70 | 9.47% | 54.6% | 233 | 42/43 | `5efa9521-545b-4e6c-b160-c88756591508` |
-| Gemma 4 12B single-agent | +10.49% | $110,492.50 | 14.72% | 82.5% | 103 | 32/43 | `376cc205-758f-49c1-a8e7-cac1f1967b43` |
+| Gemma 4 12B single-agent (16,384 context tokens) | +9.49% | $109,488.49 | 15.01% | 80.0% | 108 | 41/43 | `9d34bbba-6703-4efa-95a6-c36741dd7d0d` |
 | Gemma 4 12B multi-agent | +6.12% | $106,119.37 | 9.31% | 47.5% | 242 | 43/43 | `dd0d5097-e169-4f1e-b16c-787ee05fed11` |
 | GPT-5.5 single-agent | +10.76% | $110,764.36 | 15.70% | 87.9% | 50 | 43/43 | `d471d2fd-5b91-4831-810c-a7ef04713984` |
 
@@ -36,11 +36,11 @@ Peak holdings were 20. There were 208 closes with holdings above their weight ca
 
 Momentum used weekly 20/50-session moving-average signals and capped equal-weight targets.
 
-### Qwen 3.5 9B single-agent
+### Qwen 3.5 9B single-agent (16,384 context tokens, 180s call timeout)
 
-Peak holdings were 20. There were 208 closes with holdings above their weight caps. Allocation-related order rejections were Reduction no longer needed at open (2), Maximum positions (36). Tickers traded among RKLB, PLTR, and COIN were RKLB, PLTR, COIN.
+Peak holdings were 20. There were 187 closes with holdings above their weight caps. Allocation-related order rejections were Position or exposure limit (11), Maximum positions (8), Reduction no longer needed at open (2). Tickers traded among RKLB, PLTR, and COIN were RKLB, PLTR, COIN.
 
-The run recorded 58 model calls, 0 skipped weeks, and 78.2 seconds per scheduled decision on average. Recorded inference errors were audit/call_timeout (3), audit/duplicate_signal_symbol (5), audit/invalid_model_json (1), portfolio/call_timeout (3), portfolio/duplicate_signal_symbol (5), portfolio/invalid_model_json (14). Reported token usage was 480,556 input tokens, 85,775 output tokens.
+The run recorded 56 model calls, 0 skipped weeks, and 59.7 seconds per scheduled decision on average. Recorded inference errors were audit/duplicate_signal_symbol (3), portfolio/duplicate_signal_symbol (3), portfolio/invalid_model_json (9). Reported token usage was 448,407 input tokens, 74,908 output tokens.
 
 ### Qwen 3.5 9B multi-agent
 
@@ -48,11 +48,11 @@ Peak holdings were 18. There were 169 closes with holdings above their weight ca
 
 The run recorded 174 model calls, 0 skipped weeks, and 96.1 seconds per scheduled decision on average. Recorded inference errors were audit/duplicate_signal_symbol (1), portfolio/duplicate_signal_symbol (1). Reported token usage was 855,101 input tokens, 113,759 output tokens.
 
-### Gemma 4 12B single-agent
+### Gemma 4 12B single-agent (16,384 context tokens)
 
-Peak holdings were 20. There were 185 closes with holdings above their weight caps. Allocation-related order rejections were Maximum positions (8). Tickers traded among RKLB, PLTR, and COIN were RKLB, PLTR.
+Peak holdings were 20. There were 204 closes with holdings above their weight caps. Allocation-related order rejections were Reduction no longer needed at open (4), Maximum positions (41). Tickers traded among RKLB, PLTR, and COIN were RKLB, PLTR, COIN.
 
-The run recorded 70 model calls, 0 skipped weeks, and 48.2 seconds per scheduled decision on average. Recorded inference errors were audit/duplicate_signal_symbol (1), audit/input_context_limit (10), portfolio/duplicate_signal_symbol (1), portfolio/input_context_limit (10). Reported token usage was 565,681 input tokens, 32,042 output tokens.
+The run recorded 80 model calls, 0 skipped weeks, and 68.5 seconds per scheduled decision on average. Recorded inference errors were audit/input_context_limit (2), portfolio/call_timeout (1), portfolio/input_context_limit (2). Reported token usage was 823,238 input tokens, 44,223 output tokens.
 
 ### Gemma 4 12B multi-agent
 

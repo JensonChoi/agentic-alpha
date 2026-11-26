@@ -57,8 +57,8 @@ class Config(BaseModel):
     decision_provider: Literal['ollama','compatible','openai'] | None = None
     temperature: float = Field(default=0, ge=0, le=2)
     output_tokens: int = Field(default=2048, ge=128, le=8192)
-    context_tokens: int = Field(default=8192, ge=2048, le=32768)
-    call_timeout: float = Field(default=90, gt=0, le=600)
+    context_tokens: int = Field(default=16384, ge=2048, le=32768)
+    call_timeout: float = Field(default=180, gt=0, le=600)
     decision_timeout: float = Field(default=600, gt=0, le=3600)
     analyst_concurrency: int = Field(default=1, ge=1, le=3)
     tool_rounds: int = Field(default=2, ge=0, le=4)

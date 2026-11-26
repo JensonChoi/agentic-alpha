@@ -16,7 +16,7 @@
   "rebalance": "weekly",
   "max_model_calls": 12,
   "analyst_concurrency": 1,
-  "context_tokens": 8192,
+  "context_tokens": 16384,
   "output_tokens": 2048,
   "temperature": 0,
   "seed": 42
