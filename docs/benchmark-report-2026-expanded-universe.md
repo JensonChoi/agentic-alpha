@@ -18,28 +18,30 @@ ETHA underwent a one-for-three reverse split on October 6. The simulator applies
 
 The passive baseline reuses the original 2026 VOO buy-and-hold experiment. [Original benchmark report](benchmark-report.md#2026)
 
+Rows marked as means give the arithmetic average across completed runs for each metric, including each run’s maximum drawdown and validated week count. The Qwen single-agent group uses 16,384 context tokens and a 180-second call timeout. Each multi-agent mean includes its original 8,192-token, 90-second run and completed repeats at the new settings. The Gemma single-agent mean includes its 16,384-token, 90-second reference run and completed repeats at 180 seconds.
+
 | Strategy | Return | Final equity | Max drawdown | Avg. exposure | Fills | Validated weeks | Experiment |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | VOO buy and hold | +11.04% | $111,038.44 | 8.89% | 99.7% | 1 | — | `157861d6-8a27-4459-bd03-66013269e233` |
 | Momentum (20/50 sessions) | +4.86% | $104,859.98 | 13.01% | 82.1% | 775 | — | `7aa388dd-8994-4312-8aaf-57d508f68258` |
-| Qwen 3.5 9B single-agent (16,384 context tokens, 180s call timeout) | +10.69% | $110,685.14 | 11.01% | 70.1% | 212 | 40/43 | `6fb4647c-734e-40fc-b9a6-3f825ff02410` |
-| Qwen 3.5 9B multi-agent | +6.90% | $106,898.70 | 9.47% | 54.6% | 233 | 42/43 | `5efa9521-545b-4e6c-b160-c88756591508` |
-| Gemma 4 12B single-agent (16,384 context tokens) | +9.49% | $109,488.49 | 15.01% | 80.0% | 108 | 41/43 | `9d34bbba-6703-4efa-95a6-c36741dd7d0d` |
-| Gemma 4 12B multi-agent | +6.12% | $106,119.37 | 9.31% | 47.5% | 242 | 43/43 | `dd0d5097-e169-4f1e-b16c-787ee05fed11` |
+| Qwen 3.5 9B single-agent (mean of 3 runs) | +6.00% | $106,003.34 | 11.40% | 71.0% | 220.0 | 37.7/43 | 3 experiments |
+| Qwen 3.5 9B multi-agent (mean of 4 runs) | +6.77% | $106,767.63 | 10.32% | 58.6% | 265.2 | 42.5/43 | 4 experiments |
+| Gemma 4 12B single-agent (mean of 4 runs) | +10.03% | $110,034.40 | 15.08% | 76.1% | 100.0 | 42.2/43 | 4 experiments |
+| Gemma 4 12B multi-agent (mean of 4 runs) | +7.73% | $107,725.35 | 8.83% | 44.1% | 233.5 | 43.0/43 | 4 experiments |
 | GPT-5.5 single-agent | +10.76% | $110,764.36 | 15.70% | 87.9% | 50 | 43/43 | `d471d2fd-5b91-4831-810c-a7ef04713984` |
 | GPT-5.5 multi-agent | +21.41% | $121,410.10 | 10.20% | 88.7% | 61 | 43/43 | `fee3c8d2-ecfc-46a8-ae2a-345ab3598bf5` |
 
 ## Discussion
 
-The comparison pairs the same strategies over the 2026 window ending October 30. Return changes are in percentage points and use the percentages shown in the table. [Original 10-ticker results](benchmark-report.md#2026)
+The comparison pairs the same strategies over the 2026 window ending October 30. The 30-ticker column uses the overall means from the performance table where repeats are available. Return changes are in percentage points and use the percentages shown in the table. [Original 10-ticker results](benchmark-report.md#2026)
 
 | Strategy | 10-ticker return | 30-ticker return | Return change (pp) | 10-ticker max drawdown | 30-ticker max drawdown |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Momentum (20/50 sessions) | -6.30% | +4.86% | +11.16 | 11.74% | 13.01% |
-| Qwen 3.5 9B single-agent | +26.52% | +10.69% | -15.83 | 15.51% | 11.01% |
-| Qwen 3.5 9B multi-agent | +1.81% | +6.90% | +5.09 | 11.26% | 9.47% |
-| Gemma 4 12B single-agent | +11.13% | +9.49% | -1.64 | 11.46% | 15.01% |
-| Gemma 4 12B multi-agent | +12.33% | +6.12% | -6.21 | 16.67% | 9.31% |
+| Qwen 3.5 9B single-agent | +26.52% | +6.00% | -20.52 | 15.51% | 11.40% |
+| Qwen 3.5 9B multi-agent | +1.81% | +6.77% | +4.96 | 11.26% | 10.32% |
+| Gemma 4 12B single-agent | +11.13% | +10.03% | -1.10 | 11.46% | 15.08% |
+| Gemma 4 12B multi-agent | +12.33% | +7.73% | -4.60 | 16.67% | 8.83% |
 | GPT-5.5 single-agent | -4.56% | +10.76% | +15.32 | 14.51% | 15.70% |
 | GPT-5.5 multi-agent | +8.17% | +21.41% | +13.24 | 18.26% | 10.20% |
 
@@ -47,11 +49,28 @@ Returns improved for 3 of 6 LLM strategies in the 30-ticker configuration. The s
 
 GPT-5.5 multi-agent went from +8.17% to +21.41% in return and from 18.26% to 10.20% in maximum drawdown. It validated 43 of 43 decisions in the expanded run and averaged 88.7% exposure.
 
+### Local repeatability
+
+The local repeats use 16,384 context tokens and 180 seconds per call, with seed 42 and temperature 0.0. Return ranges summarize variation across runs on the same market data.
+
+| Strategy | Runs | Mean return | Return range | Mean max drawdown | Mean exposure | Validated weeks | Runs above VOO |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen 3.5 9B single-agent | 3 | +6.00% | -1.18% to +10.69% | 11.40% | 71.0% | 113/129 | 0/3 |
+| Qwen 3.5 9B multi-agent | 3 | +6.72% | +1.34% to +14.47% | 10.61% | 59.9% | 128/129 | 1/3 |
+| Gemma 4 12B single-agent | 3 | +10.22% | +8.31% to +11.72% | 15.10% | 74.9% | 128/129 | 1/3 |
+| Gemma 4 12B multi-agent | 3 | +8.26% | +6.87% to +9.11% | 8.66% | 42.9% | 129/129 | 0/3 |
+
+Gemma 4 12B multi-agent had the narrowest return range at 2.24 percentage points. Qwen 3.5 9B multi-agent had the widest at 13.12 points. Most weekly decisions validated across the local repeats, even where returns varied widely.
+
 The 10-ticker portfolios could hold up to 10 positions at 20% per ticker. The 30-ticker portfolios could hold up to 20, with 20% caps for VOO and QQQ and 5% caps elsewhere. Some agents also ran with different context budgets and call timeouts. The results measure the combined configuration changes over one retrospectively selected window.
 
 ## Conclusion
 
 GPT-5.5 multi-agent led the reported 30-ticker LLM strategies and finished +10.37 percentage points relative to VOO buy and hold. Its maximum drawdown was 10.20%, versus 8.89% for VOO.
+
+4 of 4 local strategies averaged below VOO in the matched-settings repeats. The repeated local runs measure sensitivity to rerunning the models on one market window.
+
+GPT-5.5 multi-agent was measured once in the expanded universe.
 
 This benchmark leaves the effect of universe size on its own unresolved. A follow-up would vary the ticker universe while holding allocation and inference settings fixed and repeat the comparison on a held-out period.
 
@@ -63,29 +82,27 @@ Peak holdings were 20. There were 208 closes with holdings above their weight ca
 
 Momentum used weekly 20/50-session moving-average signals and capped equal-weight targets.
 
-### Qwen 3.5 9B single-agent (16,384 context tokens, 180s call timeout)
+### Qwen 3.5 9B single-agent
 
-Peak holdings were 20. There were 187 closes with holdings above their weight caps. Allocation-related order rejections were Position or exposure limit (11), Maximum positions (8), Reduction no longer needed at open (2). Tickers traded among RKLB, PLTR, and COIN were RKLB, PLTR, COIN.
-
-The run recorded 56 model calls, 0 skipped weeks, and 59.7 seconds per scheduled decision on average. Recorded inference errors were audit/duplicate_signal_symbol (3), portfolio/duplicate_signal_symbol (3), portfolio/invalid_model_json (9). Reported token usage was 448,407 input tokens, 74,908 output tokens.
+The averages include 3 completed experiments. Individual results are recorded in the experiment audits for `6fb4647c-734e-40fc-b9a6-3f825ff02410`, `72492740-d875-4fae-b140-8a52b515739e`, `452c51aa-3bc3-49d5-8ce9-09a872d60f60`.
 
 ### Qwen 3.5 9B multi-agent
 
-Peak holdings were 18. There were 169 closes with holdings above their weight caps. Allocation-related order rejections were none. Tickers traded among RKLB, PLTR, and COIN were RKLB, PLTR, COIN.
+The averages include 4 completed experiments. Individual results are recorded in the experiment audits for `5efa9521-545b-4e6c-b160-c88756591508`, `2be927d0-69e5-4f8e-928c-c20799531f52`, `5d5e002e-e485-40f9-bf4f-b5ec32b34e7c`, `389ba1a3-dfc4-4940-840a-d0696b4b2e85`.
 
-The run recorded 174 model calls, 0 skipped weeks, and 96.1 seconds per scheduled decision on average. Recorded inference errors were audit/duplicate_signal_symbol (1), portfolio/duplicate_signal_symbol (1). Reported token usage was 855,101 input tokens, 113,759 output tokens.
+Across 3 runs at 16,384 context tokens and 180 seconds per call, mean return was +6.72%, mean maximum drawdown was 10.61%, mean exposure was 59.9%, and the mean validated week count was 42.7 of 43.
 
-### Gemma 4 12B single-agent (16,384 context tokens)
+### Gemma 4 12B single-agent
 
-Peak holdings were 20. There were 204 closes with holdings above their weight caps. Allocation-related order rejections were Reduction no longer needed at open (4), Maximum positions (41). Tickers traded among RKLB, PLTR, and COIN were RKLB, PLTR, COIN.
+The averages include 4 completed experiments. Individual results are recorded in the experiment audits for `9d34bbba-6703-4efa-95a6-c36741dd7d0d`, `0aeea2d8-eae7-449c-bfbe-f1809dd501a0`, `dc810124-537e-4c39-a860-a4c0bdec04d0`, `81543aa8-a2eb-4189-8d13-80098cb87fed`.
 
-The run recorded 80 model calls, 0 skipped weeks, and 68.5 seconds per scheduled decision on average. Recorded inference errors were audit/input_context_limit (2), portfolio/call_timeout (1), portfolio/input_context_limit (2). Reported token usage was 823,238 input tokens, 44,223 output tokens.
+Across 3 runs at 16,384 context tokens and 180 seconds per call, mean return was +10.22%, mean maximum drawdown was 15.10%, mean exposure was 74.9%, and the mean validated week count was 42.7 of 43.
 
 ### Gemma 4 12B multi-agent
 
-Peak holdings were 17. There were 172 closes with holdings above their weight caps. Allocation-related order rejections were none. Tickers traded among RKLB, PLTR, and COIN were RKLB, PLTR, COIN.
+The averages include 4 completed experiments. Individual results are recorded in the experiment audits for `dd0d5097-e169-4f1e-b16c-787ee05fed11`, `5ce8bb0d-3728-4157-a6f7-b4172ef0cabc`, `f85574ee-3879-4eff-9aaa-26717753fd0b`, `59544ce6-ac63-4776-8a5e-087327aa2fce`.
 
-The run recorded 172 model calls, 0 skipped weeks, and 83.0 seconds per scheduled decision on average. Recorded inference errors were none. Reported token usage was 772,815 input tokens, 75,641 output tokens.
+Across 3 runs at 16,384 context tokens and 180 seconds per call, mean return was +8.26%, mean maximum drawdown was 8.66%, mean exposure was 42.9%, and the mean validated week count was 43.0 of 43.
 
 ### GPT-5.5 single-agent
 

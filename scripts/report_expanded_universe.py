@@ -1,6 +1,7 @@
 """Publish audited results for the 30-ticker expanded universe."""
 import json
 from pathlib import Path
+from statistics import mean
 
 
 LABELS = {
@@ -27,11 +28,12 @@ VOO_RETURN = 11.04
 VOO_DRAWDOWN = 8.89
 
 
-def discussion(results: dict[str, dict]) -> list[str]:
+def discussion(results: dict[str, dict], matched_runs: dict[str, list[dict]]) -> list[str]:
     lines = [
         '## Discussion',
         '',
         'The comparison pairs the same strategies over the 2026 window ending October 30. '
+        'The 30-ticker column uses the overall means from the performance table where repeats are available. '
         'Return changes are in percentage points and use the percentages shown in the table. '
         '[Original 10-ticker results](benchmark-report.md#2026)',
         '',
@@ -60,6 +62,38 @@ def discussion(results: dict[str, dict]) -> list[str]:
                       f"and from {previous_drawdown:.2f}% to {abs(stats['drawdown']):.2%} in maximum drawdown. "
                       f"It validated {stats['accepted']} of {stats['scheduled']} decisions in the expanded run and "
                       f"averaged {stats['mean_exposure']:.1%} exposure."])
+    if matched_runs:
+        lines.extend([
+            '',
+            '### Local repeatability',
+            '',
+            'The local repeats use 16,384 context tokens and 180 seconds per call, with seed 42 and temperature 0.0. '
+            'Return ranges summarize variation across runs on the same market data.',
+            '',
+            '| Strategy | Runs | Mean return | Return range | Mean max drawdown | Mean exposure | Validated weeks | Runs above VOO |',
+            '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+        ])
+        ranges = {}
+        for key, runs in matched_runs.items():
+            returns = [run['total_return'] for run in runs]
+            ranges[key] = max(returns) - min(returns)
+            drawdown = mean(abs(run['drawdown']) for run in runs)
+            exposure = mean(run['mean_exposure'] for run in runs)
+            accepted = sum(run['accepted'] for run in runs)
+            scheduled = sum(run['scheduled'] for run in runs)
+            above_voo = sum(ret > VOO_RETURN / 100 for ret in returns)
+            lines.append(f'| {LABELS[key]} | {len(runs)} | {mean(returns):+.2%} | '
+                         f'{min(returns):+.2%} to {max(returns):+.2%} | {drawdown:.2%} | '
+                         f'{exposure:.1%} | {accepted}/{scheduled} | {above_voo}/{len(runs)} |')
+        if len(matched_runs) > 1:
+            narrowest = min(ranges, key=ranges.get)
+            widest = max(ranges, key=ranges.get)
+            lines.extend([
+                '',
+                f'{LABELS[narrowest]} had the narrowest return range at {ranges[narrowest] * 100:.2f} percentage points. '
+                f'{LABELS[widest]} had the widest at {ranges[widest] * 100:.2f} points. '
+                'Most weekly decisions validated across the local repeats, even where returns varied widely.',
+            ])
     lines.extend([
         '',
         'The 10-ticker portfolios could hold up to 10 positions at 20% per ticker. '
@@ -71,7 +105,7 @@ def discussion(results: dict[str, dict]) -> list[str]:
     return lines
 
 
-def conclusion(results: dict[str, dict]) -> list[str]:
+def conclusion(results: dict[str, dict], matched_runs: dict[str, list[dict]]) -> list[str]:
     lines = ['## Conclusion', '']
     agents = {key: stats for key, stats in results.items() if key != 'momentum'}
     if agents:
@@ -84,6 +118,16 @@ def conclusion(results: dict[str, dict]) -> list[str]:
             f"versus {VOO_DRAWDOWN:.2f}% for VOO.",
             '',
         ])
+    if matched_runs:
+        below_voo = sum(mean(run['total_return'] for run in runs) < VOO_RETURN / 100
+                        for runs in matched_runs.values())
+        lines.extend([
+            f'{below_voo} of {len(matched_runs)} local strategies averaged below VOO in the matched-settings repeats. '
+            'The repeated local runs measure sensitivity to rerunning the models on one market window.',
+            '',
+        ])
+    if 'gpt55-multi' in results:
+        lines.extend(['GPT-5.5 multi-agent was measured once in the expanded universe.', ''])
     lines.extend([
         'This benchmark leaves the effect of universe size on its own unresolved. '
         'A follow-up would vary the ticker universe while holding allocation and inference settings fixed '
@@ -91,6 +135,24 @@ def conclusion(results: dict[str, dict]) -> list[str]:
         '',
     ])
     return lines
+
+
+REPEAT_REFERENCES = {
+    'qwen-single': 'context-16384/qwen-single/repeat-2',
+    'qwen-multi': 'qwen-multi',
+    'gemma-single': 'context-16384/gemma-single',
+    'gemma-multi': 'gemma-multi',
+}
+
+
+def repeat_results(output: Path, key: str) -> list[dict]:
+    if key not in REPEAT_REFERENCES:
+        return []
+    repeats = sorted((output / 'replications' / key).glob('repeat-*/2026-audit.json'))
+    if not repeats:
+        return []
+    reference = output / REPEAT_REFERENCES[key] / '2026-audit.json'
+    return [json.loads(path.read_text()) for path in [reference, *repeats]]
 
 
 def publish(root: Path, reports: Path) -> None:
@@ -116,12 +178,18 @@ def publish(root: Path, reports: Path) -> None:
         '[Nasdaq corporate action notice](https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2026-713)', '',
         '## Performance', '',
         'The passive baseline reuses the original 2026 VOO buy-and-hold experiment. [Original benchmark report](benchmark-report.md#2026)', '',
+        'Rows marked as means give the arithmetic average across completed runs for each metric, '
+        'including each run’s maximum drawdown and validated week count. The Qwen single-agent group uses '
+        '16,384 context tokens and a 180-second call timeout. Each multi-agent mean includes its '
+        'original 8,192-token, 90-second run and completed repeats at the new settings. The Gemma single-agent '
+        'mean includes its 16,384-token, 90-second reference run and completed repeats at 180 seconds.', '',
         '| Strategy | Return | Final equity | Max drawdown | Avg. exposure | Fills | Validated weeks | Experiment |',
         '| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |',
         f'| VOO buy and hold | {VOO_RETURN:+.2f}% | $111,038.44 | {VOO_DRAWDOWN:.2f}% | 99.7% | 1 | — | `157861d6-8a27-4459-bd03-66013269e233` |',
     ]
     details = []
     results = {}
+    matched_runs = {}
     runs = {key: [(output / key, None)] for key in LABELS}
     for context_dir in sorted(output.glob('context-*')):
         tokens = int(context_dir.name.removeprefix('context-'))
@@ -145,6 +213,37 @@ def publish(root: Path, reports: Path) -> None:
             continue
 
         stats = json.loads(path.read_text())
+        repetitions = repeat_results(output, key)
+        if repetitions:
+            averages = {metric: mean(run[metric] for run in repetitions)
+                        for metric in ('total_return', 'equity', 'drawdown', 'mean_exposure', 'fills', 'accepted')}
+            results[key] = averages
+            run_count = len(repetitions)
+            matched = repetitions if key == 'qwen-single' else repetitions[1:]
+            if len(matched) >= 2:
+                matched_runs[key] = matched
+            report.append(f"| {label} (mean of {run_count} runs) | {averages['total_return']:+.2%} | "
+                          f"${averages['equity']:,.2f} | {abs(averages['drawdown']):.2%} | "
+                          f"{averages['mean_exposure']:.1%} | {averages['fills']:.1f} | "
+                          f"{averages['accepted']:.1f}/{stats['scheduled']} | {run_count} experiments |")
+            identifiers = ', '.join(f"`{run['id']}`" for run in repetitions)
+            details.extend([
+                f'### {label}', '',
+                f'The averages include {run_count} completed experiments. Individual results are recorded '
+                f'in the experiment audits for {identifiers}.', '',
+            ])
+            if key != 'qwen-single' and len(matched) >= 2:
+                matched_return = mean(run['total_return'] for run in matched)
+                matched_drawdown = mean(abs(run['drawdown']) for run in matched)
+                matched_exposure = mean(run['mean_exposure'] for run in matched)
+                matched_validated = mean(run['accepted'] for run in matched)
+                details.extend([
+                    f'Across {len(matched)} runs at 16,384 context tokens and 180 seconds per call, '
+                    f'mean return was {matched_return:+.2%}, mean maximum drawdown was {matched_drawdown:.2%}, '
+                    f'mean exposure was {matched_exposure:.1%}, and the mean validated week count was '
+                    f"{matched_validated:.1f} of {stats['scheduled']}.", '',
+                ])
+            continue
         results[key] = stats
         if tokens is not None:
             timeout = stats.get('call_timeout')
@@ -183,7 +282,7 @@ def publish(root: Path, reports: Path) -> None:
                 f"[API pricing]({measured['pricing']['source']})", '',
             ])
     if results:
-        report.extend(['', *discussion(results), *conclusion(results),
+        report.extend(['', *discussion(results, matched_runs), *conclusion(results, matched_runs),
                        '## Appendix: Portfolio and inference audit', '', *details])
     path = root / 'docs/benchmark-report-2026-expanded-universe.md'
     staged = path.with_suffix('.staged')
