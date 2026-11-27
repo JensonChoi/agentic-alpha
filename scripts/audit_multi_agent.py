@@ -7,13 +7,20 @@ from app.data import sessions
 from app.experiments import inputs
 
 
+def average_exposure(equity: list[dict]) -> float:
+    return sum(1 - day['cash'] / day['equity'] for day in equity) / len(equity)
+
+
 def audit(config, result):
     frame, manifest = inputs(config)
     dates = [d.date() for d in sessions(config.start, config.end)]
     scheduled = [day.isoformat() for day, following in zip(dates, dates[1:] + [dates[-1] + timedelta(days=1)])
                  if day.isocalendar()[:2] != following.isocalendar()[:2]]
     decisions = result['decisions']
-    assert scheduled == [d['date'] for d in decisions]
+    if config.strategy == 'momentum':
+        assert set(d['date'] for d in decisions) <= set(scheduled)
+    else:
+        assert scheduled == [d['date'] for d in decisions]
     assert [d.isoformat() for d in dates] == [p['date'] for p in result['equity']]
     roles = {'technical', 'fundamental_news', 'risk', 'portfolio'} if config.strategy == 'multi_agent' else {'portfolio'}
     accepted = set()
@@ -25,6 +32,10 @@ def audit(config, result):
     latency = 0.0
     for decision in decisions:
         trace = decision['trace']
+        if config.strategy == 'momentum':
+            assert not trace
+            accepted.add(decision['date'])
+            continue
         weekly = trace[-1]
         assert weekly['role'] == 'audit'
         if weekly['status'] == 'completed':
@@ -72,6 +83,12 @@ def audit(config, result):
             market_value = sum(q * bars.loc[(stamp, t), 'open'] for t, q in shares.items() if abs(q) > 1e-9)
             exposure = market_value / (cash + market_value)
             assert cash >= -1e-6 and exposure <= config.max_exposure + 1e-9
+            if config.position_weight_overrides:
+                assert sum(q > 1e-9 for q in shares.values()) <= config.max_positions
+                if fill['quantity'] > 0:
+                    ticker = fill['ticker']
+                    weight = shares[ticker] * bars.loc[(stamp, ticker), 'open'] / (cash + market_value)
+                    assert weight <= config.position_weight_limit(ticker) + 1e-9
             minimum_cash = cash if minimum_cash is None else min(minimum_cash, cash)
             maximum_exposure = exposure if maximum_exposure is None else max(maximum_exposure, exposure)
         equity = cash + sum(q * bars.loc[(stamp, t), 'close'] for t, q in shares.items() if abs(q) > 1e-9)

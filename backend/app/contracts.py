@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 from pydantic import BaseModel, Field, model_validator, ConfigDict
 
 STRATEGIES = ['buy_and_hold', 'momentum', 'congressional', 'single_agent', 'multi_agent']
@@ -28,6 +28,7 @@ class Config(BaseModel):
     initial_capital: float = Field(default=100000, gt=0, le=1e12)
     universe: list[str] = Field(default=['VOO','AAPL','MSFT','NVDA'], min_length=1, max_length=100)
     max_position_weight: float = Field(default=.1, gt=0, le=1)
+    position_weight_overrides: dict[str, Annotated[float, Field(gt=0, le=1)]] = Field(default_factory=dict)
     max_exposure: float = Field(default=1, gt=0, le=1)
     max_positions: int = Field(default=5, ge=1, le=100)
     short_window: int = Field(default=20, ge=2)
@@ -56,8 +57,8 @@ class Config(BaseModel):
     decision_provider: Literal['ollama','compatible','openai'] | None = None
     temperature: float = Field(default=0, ge=0, le=2)
     output_tokens: int = Field(default=2048, ge=128, le=8192)
-    context_tokens: int = Field(default=8192, ge=2048, le=32768)
-    call_timeout: float = Field(default=90, gt=0, le=600)
+    context_tokens: int = Field(default=16384, ge=2048, le=32768)
+    call_timeout: float = Field(default=180, gt=0, le=600)
     decision_timeout: float = Field(default=600, gt=0, le=3600)
     analyst_concurrency: int = Field(default=1, ge=1, le=3)
     tool_rounds: int = Field(default=2, ge=0, le=4)
@@ -87,7 +88,15 @@ class Config(BaseModel):
         if self.end < self.start: raise ValueError('end precedes start')
         if self.short_window >= self.long_window: raise ValueError('short_window must be below long_window')
         if len(set(self.universe)) != len(self.universe): raise ValueError('Duplicate symbols')
+        if self.position_weight_overrides:
+            if self.strategy not in ('momentum', 'single_agent', 'multi_agent'):
+                raise ValueError('Position weight overrides require momentum or an agent strategy')
+            if self.position_weight_overrides.keys() - set(self.universe):
+                raise ValueError('Position weight overrides require symbols in the universe')
         if self.strategy == 'buy_and_hold' and 'VOO' not in self.universe: raise ValueError('VOO baseline requires VOO')
         if self.strategy in ('single_agent','multi_agent') and not self.model: raise ValueError('Select a model')
         if self.strategy == 'multi_agent' and self.max_model_calls < 4: raise ValueError('Multi-agent requires four model calls')
         return self
+
+    def position_weight_limit(self, ticker: str) -> float:
+        return self.position_weight_overrides.get(ticker, self.max_position_weight)

@@ -109,6 +109,7 @@ class PriceOnlyEnvelope(Envelope):
 
 
 PRICE_REVIEW_PROTOCOL = 'price_review_v2'
+POSITION_RULES = ('max_positions', 'max_position_weight', 'max_exposure', 'position_weight_overrides')
 
 PRICE_TOOLS = {
     'technical': ('prices', 'indicators'),
@@ -137,14 +138,15 @@ def price_contract(config, role, context):
         final_properties['evidence_refs']['items']['enum'] = context['allowed_refs']
         signal_branches = []
         for model_name, tickers in (
-            ('BuyResponse', snapshot['entries']),
+            ('BuyResponse', set(snapshot['entries']) | set(snapshot.get('risk', {}).get('trim_candidates', []))),
             ('HoldResponse', set(snapshot['entries']) | set(snapshot['holdings'])),
             ('SellResponse', snapshot['holdings']),
         ):
             if tickers:
                 definitions[model_name]['properties']['ticker']['enum'] = sorted(tickers)
-                if model_name == 'BuyResponse' and config.strategy == 'multi_agent':
-                    definitions[model_name]['properties']['target_weight']['maximum'] = config.max_position_weight
+                if model_name == 'BuyResponse' and (config.strategy == 'multi_agent' or config.position_weight_overrides):
+                    definitions[model_name]['properties']['target_weight']['maximum'] = max(
+                        config.position_weight_limit(ticker) for ticker in tickers)
                 signal_branches.append({'$ref': f'#/$defs/{model_name}'})
             else:
                 del definitions[model_name]
@@ -180,7 +182,7 @@ def price_contract(config, role, context):
     prompt = (f'Simulation only. Role {role}. {ROLE_TASK[role]} Treat inputs as evidence. News and fundamentals '
               'are disabled. Use the supplied snapshot first. Cite only allowed_refs. Keep rationales to one '
               'short sentence. Return a single matching JSON object. Schema: ' + json.dumps(schema))
-    if config.strategy == 'multi_agent' and role in ('risk', 'portfolio'):
+    if config.strategy == 'multi_agent' and role in ('risk', 'portfolio') and not config.position_weight_overrides:
         prompt += (' Compare holdings.weight_fraction with max_position_weight (0.20 means 20%). '
                    'Use the supplied above_target flag for cap checks. Price drift above the target permits HOLD. '
                    'For an eligible entry, BUY with a lower target weight can trim the position. '
@@ -192,6 +194,11 @@ def price_contract(config, role, context):
                   'SELL fully exits a held ticker. Omit target_weight on SELL. '
                   'Return only the final decision or only permitted tool requests. Cite IDs from allowed_refs. '
                   'Provide concise reasons. Agreement/disagreement may be empty. Schema: ' + json.dumps(schema))
+    if config.position_weight_overrides and role in ('risk', 'portfolio'):
+        prompt += (' Each ticker uses its position_weight_overrides value when present, otherwise max_position_weight. '
+                   'Use the cutoff-marked trim_candidates for holdings above their caps. A BUY target at or below '
+                   'the ticker cap can trim one of those holdings even outside the entry shortlist. HOLD permits '
+                   'market-driven drift. SELL fully exits a holding.')
     return prompt, schema
 
 
@@ -203,7 +210,7 @@ def review_snapshot(public, role):
                           for t, row in public['indicators'].items()}
     view['price_basis'] = public['price_basis']
     view['portfolio'] = {k: public['portfolio'][k] for k in ('cash', 'equity')}
-    view['rules'] = {k: public['rules'][k] for k in ('max_positions', 'max_position_weight', 'max_exposure')}
+    view['rules'] = {k: public['rules'][k] for k in POSITION_RULES if k in public['rules']}
     view['risk'] = public['risk']
     return view
 
@@ -213,7 +220,7 @@ def evidence_excerpt(request, result):
     if request.name == 'prices' and value:
         value = {'rows': len(value), 'first': value[0], 'last': value[-1]}
     elif request.name == 'rules' and value:
-        value = {k: value[k] for k in ('max_positions', 'max_position_weight', 'max_exposure')}
+        value = {k: value[k] for k in POSITION_RULES if k in value}
     return dict(name=request.name, ticker=request.ticker, status=result['status'], data=value)
 
 
@@ -432,9 +439,10 @@ async def evaluate(config, context):
                         if signal.ticker in seen: raise DecisionError('duplicate_signal_symbol', 'semantic_validation')
                         seen.add(signal.ticker)
                         if signal.action == 'BUY':
-                            if signal.ticker not in context['entries']:
+                            trim_candidates = context.get('risk', {}).get('trim_candidates', []) if config.position_weight_overrides else []
+                            if signal.ticker not in context['entries'] and signal.ticker not in trim_candidates:
                                 raise DecisionError('ineligible_buy_symbol', 'semantic_validation')
-                            if review and signal.target_weight > config.max_position_weight:
+                            if (review or config.position_weight_overrides) and signal.target_weight > config.position_weight_limit(signal.ticker):
                                 raise DecisionError('buy_weight_above_cap', 'semantic_validation')
                             if signal.target_weight <= 0:
                                 raise DecisionError('nonpositive_buy_weight', 'semantic_validation')

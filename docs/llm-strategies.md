@@ -24,8 +24,7 @@ existing deterministic strategies.
 Select the dataset and model in the dashboard or submit the same configuration to
 the existing experiment API. Models must already be installed. No downloads or
 Ollama global settings changes occur. Use concurrency one on a 24GB Mac and run
-model families sequentially. An 8192-token context does not guarantee a given
-model fits RAM; download size is not runtime memory consumption.
+model families sequentially. Runtime memory depends on the model and context size.
 
 ## Contracts and policy
 
@@ -50,9 +49,12 @@ separate from the final agent's interpretation. Risk input describes current
 portfolio exposure, drawdown and candidate weight limits, not future proposals.
 Sectors are unavailable. Analyst advice cannot override deterministic controls.
 
-Defaults: 12 actual invocations, two tool rounds per role, eight tool requests per
-decision, one retry per invocation, 90 seconds per call, 600 seconds per
-decision, and one concurrent analyst. Retries and follow-ups consume the shared
+The default context budget is 16,384 tokens. The adapter requests that window
+from Ollama. OpenAI and compatible endpoints manage their own context windows.
+Each decision permits 12 model invocations, two tool rounds per role, eight
+tool requests, one retry per invocation, and one concurrent analyst by default.
+The default time limits are 180 seconds per call and 600 seconds per decision.
+Retries and follow-ups consume the shared
 budget; one invocation is reserved for final synthesis. No automatic schema repair.
 Worker cancellation is polled every half second while asynchronous inference runs.
 Provider-side compute may continue after an HTTP request is canceled.
